@@ -12,12 +12,16 @@ class ExploreScreen extends StatefulWidget {
     super.key,
     required this.reports,
     required this.onReportAt,
+    required this.onSelectLocation,
     this.enableMapTiles = true,
+    this.isLive = false,
   });
 
   final List<HazardReport> reports;
   final void Function(double latitude, double longitude) onReportAt;
+  final void Function(double latitude, double longitude) onSelectLocation;
   final bool enableMapTiles;
+  final bool isLive;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -88,7 +92,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       Text(
-                        'Community-submitted demo',
+                        report.isDemo
+                            ? 'Community-submitted demo'
+                            : 'Community report',
                         style: TextStyle(color: colors.onSurfaceVariant),
                       ),
                     ],
@@ -126,14 +132,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 color: const Color(0xFFFFF6E5),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 20, color: Color(0xFF815500)),
-                  SizedBox(width: 10),
+                  const Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: Color(0xFF815500),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Demo data — not a verified safety finding.',
-                      style: TextStyle(color: Color(0xFF674500)),
+                      report.isDemo
+                          ? 'Demo data — not a verified safety finding.'
+                          : 'Community report — independently verify.',
+                      style: const TextStyle(color: Color(0xFF674500)),
                     ),
                   ),
                 ],
@@ -147,7 +159,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Widget _reportMarker(HazardReport report) {
     return Tooltip(
-      message: '${report.type.label} • ${report.status.label} • demo',
+      message: '${report.type.label} • ${report.status.label}',
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: _markerColor(report.status),
@@ -255,7 +267,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               ),
                             ),
                             StatusPill(
-                              label: '${mappedReports.length} demo markers',
+                              label: '${mappedReports.length} ${widget.isLive ? 'report' : 'demo'} markers',
                               icon: Icons.location_on_outlined,
                               backgroundColor: colors.primaryContainer,
                               foregroundColor: colors.onPrimaryContainer,
@@ -282,8 +294,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 initialZoom: 15,
                                 minZoom: 10,
                                 maxZoom: 19,
-                                onTap: (_, location) =>
-                                    setState(() => _selectedPoint = location),
+                                onTap: (_, location) {
+                                  setState(() => _selectedPoint = location);
+                                  widget.onSelectLocation(
+                                    location.latitude,
+                                    location.longitude,
+                                  );
+                                },
                               ),
                               children: [
                                 if (widget.enableMapTiles)
@@ -299,7 +316,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               left: 12,
                               top: 12,
                               child: StatusPill(
-                                label: 'DEMO DATA',
+                                label: widget.isLive ? 'PILOT DATABASE' : 'DEMO DATA',
                                 icon: Icons.info_outline,
                                 backgroundColor: Colors.white.withValues(
                                   alpha: .94,

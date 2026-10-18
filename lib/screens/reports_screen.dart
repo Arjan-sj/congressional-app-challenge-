@@ -4,9 +4,10 @@ import '../models/hazard_report.dart';
 import '../widgets/app_ui.dart';
 
 class ReportsScreen extends StatelessWidget {
-  const ReportsScreen({super.key, required this.reports});
+  const ReportsScreen({super.key, required this.reports, this.isLive = false});
 
   final List<HazardReport> reports;
+  final bool isLive;
 
   IconData _iconFor(HazardType type) => switch (type) {
     HazardType.missingSidewalk => Icons.directions_walk,
@@ -38,10 +39,12 @@ class ReportsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const PageIntro(
+                PageIntro(
                   eyebrow: 'Community observations',
-                  title: 'Example reports',
-                  description: 'Review fictional test records, sorted by self-reported severity. These are not validated safety scores.',
+                  title: isLive ? 'Database reports' : 'Example reports',
+                  description: isLive
+                      ? 'Reviewed entries and your pending tests only; not a validated risk score.'
+                      : 'Review fictional test records, sorted by self-reported severity. These are not validated safety scores.',
                   icon: Icons.assignment_outlined,
                 ),
                 const SizedBox(height: 24),
@@ -51,7 +54,7 @@ class ReportsScreen extends StatelessWidget {
                   children: [
                     LabeledIcon(
                       icon: Icons.description_outlined,
-                      label: 'Fictional entries',
+                      label: isLive ? 'Visible entries' : 'Fictional entries',
                       value: '${reports.length} reports',
                     ),
                     LabeledIcon(
@@ -59,10 +62,10 @@ class ReportsScreen extends StatelessWidget {
                       label: 'Selected map points',
                       value: '$located located',
                     ),
-                    const LabeledIcon(
+                    LabeledIcon(
                       icon: Icons.fact_check_outlined,
                       label: 'Current environment',
-                      value: 'Demo only',
+                      value: isLive ? 'Pilot database' : 'Demo only',
                     ),
                   ],
                 ),
@@ -84,7 +87,7 @@ class ReportsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 if (sorted.isEmpty)
-                  const _EmptyReports()
+                  _EmptyReports(isLive: isLive)
                 else
                   for (var index = 0; index < sorted.length; index++) ...[
                     _ReportCard(
@@ -178,9 +181,9 @@ class _ReportCard extends StatelessWidget {
                             ? 'Map point selected'
                             : 'No verified location',
                       ),
-                      const _MetaItem(
+                      _MetaItem(
                         icon: Icons.science_outlined,
-                        text: 'Demo only',
+                        text: report.isDemo ? 'Demo only' : 'Community entry',
                       ),
                     ],
                   ),
@@ -229,7 +232,9 @@ class _MetaItem extends StatelessWidget {
 }
 
 class _EmptyReports extends StatelessWidget {
-  const _EmptyReports();
+  const _EmptyReports({required this.isLive});
+
+  final bool isLive;
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +248,7 @@ class _EmptyReports extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'No demo reports yet',
+            isLive ? 'No visible reports yet' : 'No demo reports yet',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ],
