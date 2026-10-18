@@ -10,6 +10,7 @@
         "cupertino_icons",
         "flutter",
         "flutter_map",
+        "http",
         "latlong2",
         "supabase_flutter"
       ],
@@ -58,6 +59,16 @@
         "supabase",
         "supabase_common",
         "url_launcher",
+        "web"
+      ]
+    },
+    {
+      "name": "http",
+      "version": "1.6.0",
+      "dependencies": [
+        "async",
+        "http_parser",
+        "meta",
         "web"
       ]
     },
@@ -263,16 +274,6 @@
       ]
     },
     {
-      "name": "http",
-      "version": "1.6.0",
-      "dependencies": [
-        "async",
-        "http_parser",
-        "meta",
-        "web"
-      ]
-    },
-    {
       "name": "async",
       "version": "2.13.1",
       "dependencies": [
@@ -288,6 +289,16 @@
         "app_links_platform_interface",
         "app_links_web",
         "flutter"
+      ]
+    },
+    {
+      "name": "http_parser",
+      "version": "4.1.2",
+      "dependencies": [
+        "collection",
+        "source_span",
+        "string_scanner",
+        "typed_data"
       ]
     },
     {
@@ -618,16 +629,6 @@
       ]
     },
     {
-      "name": "http_parser",
-      "version": "4.1.2",
-      "dependencies": [
-        "collection",
-        "source_span",
-        "string_scanner",
-        "typed_data"
-      ]
-    },
-    {
       "name": "app_links_web",
       "version": "1.0.5",
       "dependencies": [
@@ -651,6 +652,13 @@
       "dependencies": [
         "app_links_platform_interface",
         "flutter"
+      ]
+    },
+    {
+      "name": "typed_data",
+      "version": "1.4.0",
+      "dependencies": [
+        "collection"
       ]
     },
     {
@@ -752,13 +760,6 @@
         "package_config",
         "path",
         "plugin_platform_interface"
-      ]
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
-      "dependencies": [
-        "collection"
       ]
     },
     {

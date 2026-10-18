@@ -4,6 +4,8 @@ import 'package:latlong2/latlong.dart';
 
 import '../data/pilot_school.dart';
 import '../models/hazard_report.dart';
+import '../models/school.dart';
+import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
 
 /// Displays a real interactive basemap with local, fictional demo entries.
@@ -28,14 +30,31 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
+  static const _minZoom = 4.0;
+  static const _maxZoom = 19.0;
+  static const _schoolMarkerZoom = 8.0;
+  static const _maxSchoolMarkers = 600;
   static const String _tileUrl = String.fromEnvironment(
     'MAP_TILE_URL',
     defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   );
 
   final MapController _controller = MapController();
+  final UrbanSchoolsRepository _schoolsRepository = UrbanSchoolsRepository();
   LatLng? _selectedPoint;
   HazardType? _filter;
+  List<School> _schools = const [];
+  LatLngBounds? _visibleBounds;
+  int _selectedStateFips = 17;
+  double _zoom = 15;
+  bool _loadingSchools = false;
+  String? _schoolError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.enableMapTiles) _loadSchools();
+  }
 
   List<HazardReport> get _mappedReports => widget.reports
       .where((report) => report.hasLocation)
@@ -45,7 +64,91 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _schoolsRepository.close();
     super.dispose();
+  }
+
+  Future<void> _loadSchools({bool fitState = false}) async {
+    final requestedFips = _selectedStateFips;
+    setState(() {
+      _loadingSchools = true;
+      _schoolError = null;
+    });
+    try {
+      final schools = await _schoolsRepository.fetchState(requestedFips);
+      if (!mounted || requestedFips != _selectedStateFips) return;
+      setState(() {
+        _schools = schools;
+        _loadingSchools = false;
+      });
+      if (fitState && schools.isNotEmpty) {
+        _controller.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(
+              schools.map((school) => school.location).toList(),
+            ),
+            padding: const EdgeInsets.all(40),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted || requestedFips != _selectedStateFips) return;
+      setState(() {
+        _loadingSchools = false;
+        _schoolError = 'Could not load schools from Urban Institute.';
+      });
+    }
+  }
+
+  void _selectState(int? fips) {
+    if (fips == null || fips == _selectedStateFips) return;
+    setState(() {
+      _selectedStateFips = fips;
+      _schools = const [];
+    });
+    _loadSchools(fitState: true);
+  }
+
+  void _zoomBy(double amount) {
+    final nextZoom = (_controller.camera.zoom + amount)
+        .clamp(_minZoom, _maxZoom)
+        .toDouble();
+    _controller.move(_controller.camera.center, nextZoom);
+  }
+
+  List<School> get _visibleSchools {
+    final bounds = _visibleBounds;
+    if (_zoom < _schoolMarkerZoom || bounds == null) return const [];
+    return _schools
+        .where((school) => bounds.contains(school.location))
+        .take(_maxSchoolMarkers)
+        .toList(growable: false);
+  }
+
+  void _showSchoolDetails(School school) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(school.name, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(school.levelLabel),
+            Text(school.district),
+            if (school.address.isNotEmpty) Text(school.address),
+            const SizedBox(height: 14),
+            const Text(
+              'Source: Urban Institute Education Data Portal, '
+              'NCES Common Core of Data 2024.',
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Color _markerColor(ReportStatus status) => switch (status) {
@@ -187,20 +290,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final mappedReports = _mappedReports;
+    final visibleSchools = _visibleSchools;
     final markers = <Marker>[
-      Marker(
-        point: PilotSchool.location,
-        width: 56,
-        height: 56,
-        child: Tooltip(
-          message: PilotSchool.name,
-          child: IconButton.filledTonal(
-            tooltip: 'Center on ${PilotSchool.name}',
-            onPressed: () => _controller.move(PilotSchool.location, 15),
-            icon: const Icon(Icons.school),
+      for (final school in visibleSchools)
+        Marker(
+          point: school.location,
+          width: 42,
+          height: 42,
+          child: Tooltip(
+            message: '${school.name} • ${school.levelLabel}',
+            child: IconButton.filledTonal(
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              tooltip: 'View ${school.name}',
+              onPressed: () => _showSchoolDetails(school),
+              icon: const Icon(Icons.school, size: 20),
+            ),
           ),
         ),
-      ),
       for (final report in mappedReports)
         Marker(
           point: LatLng(report.latitude!, report.longitude!),
@@ -228,11 +335,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
               children: [
                 const PageIntro(
                   eyebrow: 'Explore the pilot area',
-                  title: 'Explore school area',
-                  description: 'Select a point on the map to document a walking or biking concern near the pilot school.',
+                  title: 'Explore U.S. public schools',
+                  description: 'Choose a state, zoom into a community, and select a point to document a walking or biking concern.',
                   icon: Icons.travel_explore,
                   trailing: StatusPill(
-                    label: '${PilotSchool.name} • pilot area',
+                    label: 'Urban Institute • CCD 2024',
                     icon: Icons.school_outlined,
                   ),
                 ),
@@ -266,11 +373,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 ],
                               ),
                             ),
-                            StatusPill(
-                              label: '${mappedReports.length} ${widget.isLive ? 'report' : 'demo'} markers',
-                              icon: Icons.location_on_outlined,
-                              backgroundColor: colors.primaryContainer,
-                              foregroundColor: colors.onPrimaryContainer,
+                            SizedBox(
+                              width: 190,
+                              child: DropdownButtonFormField<int>(
+                                initialValue: _selectedStateFips,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'School state',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                items: [
+                                  for (final state in usStates)
+                                    DropdownMenuItem(
+                                      value: state.fips,
+                                      child: Text(
+                                        '${state.code} — ${state.name}',
+                                      ),
+                                    ),
+                                ],
+                                onChanged: _selectState,
+                              ),
                             ),
                           ],
                         ),
@@ -292,8 +418,21 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               options: MapOptions(
                                 initialCenter: PilotSchool.location,
                                 initialZoom: 15,
-                                minZoom: 10,
-                                maxZoom: 19,
+                                minZoom: _minZoom,
+                                maxZoom: _maxZoom,
+                                onMapReady: () {
+                                  final camera = _controller.camera;
+                                  setState(() {
+                                    _zoom = camera.zoom;
+                                    _visibleBounds = camera.visibleBounds;
+                                  });
+                                },
+                                onPositionChanged: (camera, _) {
+                                  setState(() {
+                                    _zoom = camera.zoom;
+                                    _visibleBounds = camera.visibleBounds;
+                                  });
+                                },
                                 onTap: (_, location) {
                                   setState(() => _selectedPoint = location);
                                   widget.onSelectLocation(
@@ -316,7 +455,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               left: 12,
                               top: 12,
                               child: StatusPill(
-                                label: widget.isLive ? 'PILOT DATABASE' : 'DEMO DATA',
+                                label: widget.isLive
+                                    ? 'PILOT DATABASE'
+                                    : 'DEMO DATA',
                                 icon: Icons.info_outline,
                                 backgroundColor: Colors.white.withValues(
                                   alpha: .94,
@@ -339,16 +480,54 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     ),
                                   ],
                                 ),
-                                child: IconButton(
-                                  tooltip: 'Back to pilot school',
-                                  onPressed: () => _controller.move(
-                                    PilotSchool.location,
-                                    15,
-                                  ),
-                                  icon: const Icon(Icons.my_location),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Zoom in',
+                                      onPressed: () => _zoomBy(1),
+                                      icon: const Icon(Icons.add),
+                                    ),
+                                    const Divider(height: 1),
+                                    IconButton(
+                                      tooltip: 'Zoom out',
+                                      onPressed: () => _zoomBy(-1),
+                                      icon: const Icon(Icons.remove),
+                                    ),
+                                    const Divider(height: 1),
+                                    IconButton(
+                                      tooltip:
+                                          'Back to Schaumburg pilot school',
+                                      onPressed: () => _controller.move(
+                                        PilotSchool.location,
+                                        15,
+                                      ),
+                                      icon: const Icon(Icons.my_location),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
+                            if (_loadingSchools)
+                              const Positioned(
+                                left: 0,
+                                right: 0,
+                                top: 0,
+                                child: LinearProgressIndicator(),
+                              ),
+                            if (_schoolError != null)
+                              Positioned(
+                                left: 12,
+                                bottom: 28,
+                                child: Material(
+                                  color: colors.errorContainer,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(8),
+                                    child: Text(_schoolError!),
+                                  ),
+                                ),
+                              ),
                             Positioned(
                               right: 5,
                               bottom: 4,
@@ -363,7 +542,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     vertical: 3,
                                   ),
                                   child: Text(
-                                    '© OpenStreetMap contributors',
+                                    '© OpenStreetMap • Schools: Urban Institute / NCES CCD',
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: Colors.black87,

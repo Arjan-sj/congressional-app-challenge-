@@ -21,9 +21,7 @@ project URL and **publishable** API key from Supabase → Connect / API keys.
 Run locally using a fixed port so authentication redirects work:
 
 ```bash
-flutter run -d chrome --web-port 7357 \
-  --dart-define='SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co' \
-  --dart-define='SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_PUBLISHABLE_KEY'
+flutter run -d chrome --web-port 7357
 ```
 
 These are client-visible values. **NEVER** put a secret key, service_role key,

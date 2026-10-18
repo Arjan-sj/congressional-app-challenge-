@@ -4,12 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/app.dart';
 
 void main() {
-  testWidgets('Explore shows pilot school and interactive map controls', (tester) async {
+  testWidgets('Explore shows school map and explicit zoom controls', (
+    tester,
+  ) async {
     await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
 
     expect(find.text('SafeRoutes'), findsOneWidget);
-    expect(find.text('Explore school area'), findsOneWidget);
+    expect(find.text('Explore U.S. public schools'), findsOneWidget);
     expect(find.text('PROTOTYPE'), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.byIcon(Icons.remove), findsOneWidget);
     expect(find.byIcon(Icons.my_location), findsOneWidget);
   });
 
@@ -22,7 +26,9 @@ void main() {
     expect(find.text('Missing sidewalk'), findsOneWidget);
   });
 
-  testWidgets('Map tap is retained when switching straight to Report tab', (tester) async {
+  testWidgets('Map tap is retained when switching straight to Report tab', (
+    tester,
+  ) async {
     await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
 
     final map = find.byType(FlutterMap);
@@ -43,7 +49,9 @@ void main() {
     expect(find.text('Select a point on the map first'), findsNothing);
   });
 
-  testWidgets('Demo submission requires a selected map location', (tester) async {
+  testWidgets('Demo submission requires a selected map location', (
+    tester,
+  ) async {
     await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
     await tester.tap(find.byIcon(Icons.add_circle_outline));
     await tester.pumpAndSettle();
