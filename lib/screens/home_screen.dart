@@ -73,6 +73,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // The map selection is shared across tabs. Selecting a map point must
+  // survive navigation even if the user taps the Report tab directly.
+  void _selectLocation(double latitude, double longitude) {
+    setState(() {
+      _selectedLatitude = latitude;
+      _selectedLongitude = longitude;
+    });
+  }
+
   void _startReport(double latitude, double longitude) {
     setState(() {
       _selectedLatitude = latitude;
@@ -124,6 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ExploreScreen(
         reports: _reports,
         onReportAt: _startReport,
+        onSelectLocation: _selectLocation,
         enableMapTiles: widget.enableMapTiles,
         isLive: _live,
       ),
