@@ -13,12 +13,17 @@ class ExploreScreen extends StatefulWidget {
     super.key,
     required this.reports,
     required this.onReportAt,
+    required this.onSelectLocation,
     this.enableMapTiles = true,
     this.isLive = false,
   });
 
   final List<HazardReport> reports;
   final void Function(double latitude, double longitude) onReportAt;
+
+  /// Called immediately on a map tap, even if the user uses the bottom
+  /// Report tab rather than the secondary button below the map.
+  final void Function(double latitude, double longitude) onSelectLocation;
 
   /// Disable external requests in widget tests while keeping map behavior.
   final bool enableMapTiles;
@@ -151,6 +156,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     maxZoom: 19,
                     onTap: (_, location) {
                       setState(() => _selectedPoint = location);
+                      widget.onSelectLocation(location.latitude, location.longitude);
                     },
                   ),
                   children: [
@@ -213,7 +219,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       selected.longitude,
                     ),
                     icon: const Icon(Icons.add_location_alt_outlined),
-                    label: const Text('Report this location (demo)'),
+                    label: const Text('Continue to report form'),
                   ),
                 ],
               ),
