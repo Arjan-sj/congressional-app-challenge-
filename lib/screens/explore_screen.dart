@@ -70,6 +70,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   List<HazardReport> get _mappedReports => widget.reports
+      .where((report) => report.status != ReportStatus.rejected)
       .where((report) => report.hasLocation)
       .where((report) => _filter == null || report.type == _filter)
       .toList();

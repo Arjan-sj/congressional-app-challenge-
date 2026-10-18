@@ -7,12 +7,15 @@ import '../data/demo_reports.dart';
 import '../data/pilot_school.dart';
 import '../models/accessibility_preferences.dart';
 import '../models/hazard_report.dart';
+import '../models/report_moderation.dart';
 import '../services/supabase_hazard_repository.dart';
 import 'accessibility_settings_dialog.dart';
 import 'auth_dialog.dart';
 import 'explore_screen.dart';
 import 'report_form_screen.dart';
 import 'reports_screen.dart';
+import 'moderation_screen.dart';
+import 'report_review_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -41,6 +44,12 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _selectedLongitude;
   bool _loading = false;
   String? _loadError;
+  List<ReportFlag> _flags = [];
+  final _demoHistory = <ModerationEvent>[];
+  bool _canModerate = false;
+  int _refreshVersion = 0;
+  String? _loadedUserId;
+  BuildContext? _reviewContext;
 
   bool get _live => widget.liveClient != null;
 
@@ -48,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _reports = _live ? [] : buildDemoReports();
+    _canModerate = !_live;
     if (widget.liveClient case final client?) {
       _authSubscription = client.auth.onAuthStateChange.listen((_) {
         unawaited(_refreshReports());
@@ -67,21 +77,190 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _refreshReports() async {
     final client = widget.liveClient;
     if (client == null) return;
+    final version = ++_refreshVersion;
+    final userId = client.auth.currentUser?.id;
+    if (_loadedUserId != userId) {
+      if (_reviewContext case final reviewContext? when reviewContext.mounted) {
+        Navigator.of(reviewContext).pop();
+      }
+      _loadedUserId = userId;
+      _reports = [];
+      _flags = [];
+      _canModerate = false;
+      if (_selectedIndex == 3) _selectedIndex = 1;
+    }
     setState(() {
       _loading = true;
       _loadError = null;
     });
     try {
-      final loaded = await SupabaseHazardRepository(client)
-          .fetchHazards(PilotSchool.id);
-      if (mounted) setState(() => _reports = loaded);
+      final repository = SupabaseHazardRepository(client);
+      final loaded = await repository.fetchHazards(PilotSchool.id);
+      final canModerate = await repository.canModerate();
+      final flags = await repository.fetchFlags(PilotSchool.id);
+      if (mounted && version == _refreshVersion) {
+        setState(() {
+          _reports = loaded;
+          _flags = flags;
+          _canModerate = canModerate;
+          if (!canModerate && _selectedIndex == 3) _selectedIndex = 1;
+        });
+      }
     } catch (error) {
-      if (mounted) {
-        setState(() => _loadError = 'Database connection failed: $error');
+      if (mounted && version == _refreshVersion) {
+        setState(() {
+          _loadError = 'Database connection failed: $error';
+          _reports = [];
+          _flags = [];
+          _canModerate = false;
+          if (_selectedIndex == 3) _selectedIndex = 1;
+        });
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && version == _refreshVersion) {
+        setState(() => _loading = false);
+      }
     }
+  }
+
+  Future<void> _reviewReport(HazardReport report) async {
+    final client = widget.liveClient;
+    final actorId =
+        client?.auth.currentUser?.id ?? (_live ? null : 'demo-user');
+    final canViewHistory =
+        !_live ||
+        _canModerate ||
+        report.reporterId == actorId && actorId != null;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        _reviewContext = dialogContext;
+        return ReportReviewDialog(
+          report: report,
+          canViewHistory: canViewHistory,
+          loadData: () async {
+            final flags = client == null
+                ? _flags
+                : await SupabaseHazardRepository(client)
+                      .fetchFlags(report.schoolId);
+            return ReportReviewData(
+              flags: flags.where((f) => f.reportId == report.id).toList(),
+              history: client == null
+                  ? _demoHistory
+                        .where((e) => e.reportId == report.id)
+                        .toList()
+                        .reversed
+                        .toList()
+                  : await SupabaseHazardRepository(client)
+                        .fetchHistory(report.id),
+            );
+          },
+          onFlag:
+              actorId != null &&
+                  (report.status == ReportStatus.unverified ||
+                      report.status == ReportStatus.verified)
+              ? (reason) => _flagReport(report, reason, actorId)
+              : null,
+          onModerate: _canModerate
+              ? (status, reason) =>
+                    _moderateReport(report, status, reason, actorId!)
+              : null,
+        );
+      },
+    );
+    _reviewContext = null;
+  }
+
+  Future<void> _flagReport(
+    HazardReport report,
+    String reason,
+    String actorId,
+  ) async {
+    if (_flags.any((f) => f.reportId == report.id && f.userId == actorId)) {
+      throw StateError('You have already flagged this report.');
+    }
+    final client = widget.liveClient;
+    if (client != null) {
+      if (client.auth.currentUser?.id != actorId) {
+        throw StateError('Your account changed. Reopen this report.');
+      }
+      await SupabaseHazardRepository(client).flagReport(report, reason);
+    }
+    if (!mounted || client != null && client.auth.currentUser?.id != actorId) {
+      return;
+    }
+    setState(() {
+      // A refresh started before this write must not replace the new flag.
+      _refreshVersion++;
+      _loading = false;
+      _flags.insert(
+        0,
+        ReportFlag(
+          reportId: report.id,
+          userId: actorId,
+          reason: reason,
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _live
+              ? 'Accuracy flag submitted for moderator review.'
+              : 'Demo flag saved in memory.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _moderateReport(
+    HazardReport report,
+    ReportStatus status,
+    String reason,
+    String actorId,
+  ) async {
+    final client = widget.liveClient;
+    if (client != null && client.auth.currentUser?.id != actorId) {
+      throw StateError('Your account changed. Reopen this report.');
+    }
+    final saved = client == null
+        ? report.withStatus(status)
+        : await SupabaseHazardRepository(client)
+              .moderateReport(report, status, reason);
+    if (!mounted || client != null && client.auth.currentUser?.id != actorId) {
+      return;
+    }
+    final now = DateTime.now();
+    setState(() {
+      // Discard refreshes that captured the report before this decision.
+      _refreshVersion++;
+      _loading = false;
+      _reports = _reports.map((r) => r.id == saved.id ? saved : r).toList();
+      _flags = _flags
+          .map((f) => f.reportId == saved.id ? f.reviewed(now) : f)
+          .toList();
+      if (client == null) {
+        _demoHistory.add(
+          ModerationEvent(
+            reportId: report.id,
+            actorId: 'Demo moderator',
+            previousStatus: report.status,
+            status: status,
+            reason: reason,
+            createdAt: now,
+          ),
+        );
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${_live ? 'Report' : 'Demo report'} ${status.label.toLowerCase()}. Decision recorded.',
+        ),
+      ),
+    );
   }
 
   // The map selection is shared across tabs. Selecting a map point must
@@ -165,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen> {
         enableKeyboardNavigation:
             widget.accessibilityPreferences.keyboardMapNavigation,
       ),
-      ReportsScreen(reports: _reports, isLive: _live),
+      ReportsScreen(reports: _reports, isLive: _live, onReview: _reviewReport),
       ReportFormScreen(
         onSubmit: _saveReport,
         onChooseLocation: () => setState(() => _selectedIndex = 0),
@@ -173,6 +352,13 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedLongitude: _selectedLongitude,
         isLive: _live,
       ),
+      if (_canModerate)
+        ModerationScreen(
+          reports: _reports,
+          flags: _flags,
+          onReview: _reviewReport,
+          isDemo: !_live,
+        ),
     ];
 
     final destinations = <NavigationDestination>[
@@ -191,6 +377,12 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIcon: Icon(Icons.add_circle),
         label: 'Report',
       ),
+      if (_canModerate)
+        const NavigationDestination(
+          icon: Icon(Icons.fact_check_outlined),
+          selectedIcon: Icon(Icons.fact_check),
+          label: 'Moderation',
+        ),
     ];
 
     return Scaffold(
@@ -218,6 +410,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          if (_live)
+            IconButton(
+              tooltip: 'Refresh reports',
+              onPressed: _loading ? null : _refreshReports,
+              icon: const Icon(Icons.refresh),
+            ),
           IconButton(
             tooltip: 'Accessibility settings',
             onPressed: _showAccessibilitySettings,

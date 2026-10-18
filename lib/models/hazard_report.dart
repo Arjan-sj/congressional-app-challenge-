@@ -29,6 +29,7 @@ class HazardReport {
     required this.description,
     required this.createdAt,
     this.status = ReportStatus.unverified,
+    this.reporterId,
     this.latitude,
     this.longitude,
     this.isDemo = true,
@@ -41,6 +42,7 @@ class HazardReport {
   final String description;
   final DateTime createdAt;
   final ReportStatus status;
+  final String? reporterId;
 
   /// Null until a user selects a real, verified map location.
   final double? latitude;
@@ -50,4 +52,18 @@ class HazardReport {
   final bool isDemo;
 
   bool get hasLocation => latitude != null && longitude != null;
+
+  HazardReport withStatus(ReportStatus status) => HazardReport(
+    id: id,
+    schoolId: schoolId,
+    type: type,
+    severity: severity,
+    description: description,
+    createdAt: createdAt,
+    status: status,
+    reporterId: reporterId,
+    latitude: latitude,
+    longitude: longitude,
+    isDemo: isDemo,
+  );
 }

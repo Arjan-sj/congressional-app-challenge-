@@ -34,11 +34,12 @@ enabled; keep signup limited to internal testers during this pilot.
 In SafeRoutes, open the account icon, create or sign in to a test account.
 Select a map location, submit a **fictional** issue. It will persist as
 `is_demo=true`, `unverified`, visible to its own author, not publicly
-verified. Refresh Chrome to test persistence. No moderation workflow exists.
+verified. Refresh Chrome to test persistence. See [Moderation setup](MODERATION.md)
+to deploy the moderation migration and provision reviewer accounts.
 
 If the screen says database connection failed, check the migration deployed
 and RLS rules were applied. **Do not disable RLS** as a workaround.
 
 The production deployment needs abuse safeguards, age-appropriate privacy,
-moderator permissions, and an explicit review process. Avoid actual student
+operational moderator staffing, and an explicit review process. Avoid actual student
 locations or commuting patterns for tests.

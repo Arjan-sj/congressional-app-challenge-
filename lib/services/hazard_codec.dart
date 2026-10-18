@@ -14,7 +14,9 @@ class HazardCodec {
 
   static HazardReport fromRow(Map<String, dynamic> row) {
     final type = types.entries.firstWhere((e) => e.value == row['type']).key;
-    final status = ReportStatus.values.firstWhere((e) => e.name == row['status']);
+    final status = ReportStatus.values.firstWhere(
+      (e) => e.name == row['status'],
+    );
     return HazardReport(
       id: row['id'] as String,
       schoolId: row['school_id'] as String,
@@ -22,6 +24,7 @@ class HazardCodec {
       severity: (row['severity'] as num).toInt(),
       description: row['description'] as String,
       status: status,
+      reporterId: row['reporter_id'] as String?,
       latitude: (row['latitude'] as num).toDouble(),
       longitude: (row['longitude'] as num).toDouble(),
       isDemo: row['is_demo'] as bool? ?? false,
@@ -36,11 +39,14 @@ class HazardCodec {
     if (!report.hasLocation) {
       throw ArgumentError('Select a map location before submitting.');
     }
-    if (report.description.trim().length < 5 || report.description.trim().length > 250) {
+    if (report.description.trim().length < 5 ||
+        report.description.trim().length > 250) {
       throw ArgumentError('Description must be 5–250 characters.');
     }
-    if (report.latitude! < -90 || report.latitude! > 90 ||
-        report.longitude! < -180 || report.longitude! > 180) {
+    if (report.latitude! < -90 ||
+        report.latitude! > 90 ||
+        report.longitude! < -180 ||
+        report.longitude! > 180) {
       throw ArgumentError('Map coordinates out of range.');
     }
     return {

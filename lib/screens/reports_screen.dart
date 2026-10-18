@@ -5,10 +5,16 @@ import '../services/hazard_ranking_service.dart';
 import '../widgets/app_ui.dart';
 
 class ReportsScreen extends StatelessWidget {
-  const ReportsScreen({super.key, required this.reports, this.isLive = false});
+  const ReportsScreen({
+    super.key,
+    required this.reports,
+    this.isLive = false,
+    this.onReview,
+  });
 
   final List<HazardReport> reports;
   final bool isLive;
+  final ValueChanged<HazardReport>? onReview;
 
   IconData _iconFor(HazardType type) => switch (type) {
     HazardType.missingSidewalk => Icons.directions_walk,
@@ -131,6 +137,7 @@ class ReportsScreen extends StatelessWidget {
                       report: sorted[index],
                       icon: _iconFor(sorted[index].type),
                       accent: _colorFor(sorted[index].type),
+                      onReview: onReview,
                     ),
                     if (index != sorted.length - 1) const SizedBox(height: 12),
                   ],
@@ -340,11 +347,13 @@ class _ReportCard extends StatelessWidget {
     required this.report,
     required this.icon,
     required this.accent,
+    this.onReview,
   });
 
   final HazardReport report;
   final IconData icon;
   final Color accent;
+  final ValueChanged<HazardReport>? onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -416,6 +425,14 @@ class _ReportCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (onReview != null) ...[
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: () => onReview!(report),
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('Details, flags & history'),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -2,7 +2,7 @@
 
 A Flutter prototype for documenting school walking and biking concerns. Built for the Congressional App Challenge.
 
-> **Current stage: Setup / local demo.** This branch includes a real Flutter app shell with screens, a sample report form, in-memory demo reports and tests. There is **no live map, routing, user login, or Supabase database yet**. All example reports are fictional and are not real safety findings.
+> **Current stage: Pilot prototype.** The Flutter app includes a school map, report submission, hazard ranking, accessibility settings, optional Supabase authentication/storage, and report moderation. Demo reports are fictional and are not real safety findings. Route planning is not implemented.
 
 ## Run locally (macOS or Linux)
 
@@ -68,3 +68,10 @@ See [Setup instructions](docs/SETUP.md), [data contract](docs/INTEGRATION_CONTRA
 
 ## Optional Supabase test integration
 See [Flutter connection guide](docs/CONNECT_FLUTTER.md).
+
+## Moderation
+
+Review submitted reports, verify/reject/resolve them with a reason, flag
+inaccurate reports, and inspect decision history. Live moderation requires the
+new database migration and a provisioned moderator account. See
+[Moderation setup and verification](docs/MODERATION.md).
