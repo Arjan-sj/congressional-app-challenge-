@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/app.dart';
 
@@ -19,6 +20,25 @@ void main() {
 
     expect(find.text('Example reports'), findsOneWidget);
     expect(find.text('Missing sidewalk'), findsOneWidget);
+  });
+
+  testWidgets('Map tap is retained when switching straight to Report tab', (tester) async {
+    await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
+
+    final map = find.byType(FlutterMap);
+    expect(map, findsOneWidget);
+
+    // Tap clear of the pilot-school marker so the map itself handles the tap.
+    final bounds = tester.getRect(map);
+    await tester.tapAt(bounds.center + const Offset(90, 75));
+    await tester.pump();
+
+    // Previously the map selection was local state and this path lost it.
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Map point selected'), findsOneWidget);
+    expect(find.text('Select a point on the map first'), findsNothing);
   });
 
   testWidgets('Demo submission requires a selected map location', (tester) async {
