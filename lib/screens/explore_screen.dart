@@ -14,6 +14,7 @@ class ExploreScreen extends StatefulWidget {
     required this.reports,
     required this.onReportAt,
     this.enableMapTiles = true,
+    this.isLive = false,
   });
 
   final List<HazardReport> reports;
@@ -21,6 +22,7 @@ class ExploreScreen extends StatefulWidget {
 
   /// Disable external requests in widget tests while keeping map behavior.
   final bool enableMapTiles;
+  final bool isLive;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -63,7 +65,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             const SizedBox(height: 12),
             Text('Self-reported severity: ${report.severity}/5'),
             Text('Status: ${report.status.label}'),
-            const Text('Demo data — not a verified safety finding.'),
+            Text(report.isDemo ? 'Test entry — not verified.' : 'Community report — independently verify.'),
           ],
         ),
       ),
@@ -79,7 +81,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Widget _reportMarker(HazardReport report) {
     return Tooltip(
-      message: '${report.type.label} • ${report.status.label} • demo',
+      message: '${report.type.label} • ${report.status.label}',
       child: IconButton.filled(
         tooltip: 'View ${report.type.label} example',
         onPressed: () => _showReportDetails(report),
@@ -132,10 +134,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         const SizedBox(height: 4),
         const Text('${PilotSchool.name} • pilot area'),
         const SizedBox(height: 8),
-        const Text(
-          'Tap the map to select a location, then create a DEMO report. '
-          'The basemap is real; reported hazards in this app are fictional.',
-        ),
+        Text(widget.isLive ? 'Pilot database: test reports remain unverified.' : 'Tap the map to select a location, then create a DEMO report. The basemap is real; reported hazards in this app are fictional.'),
         const SizedBox(height: 12),
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
@@ -248,8 +247,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          '${mappedReports.length} demo markers with selected locations. '
-          'Other example reports have no map coordinates.',
+          widget.isLive ? '${mappedReports.length} records visible to this account.' : '${mappedReports.length} demo markers with selected locations. Other example reports have no map coordinates.',
         ),
         const SizedBox(height: 10),
         const ListTile(

@@ -13,7 +13,7 @@ void main() {
           selectedLatitude: 42.027416,
           selectedLongitude: -88.106632,
           onChooseLocation: () {},
-          onSubmit: (report) => saved = report,
+          onSubmit: (report) async { saved = report; },
         ),
       ),
     ));

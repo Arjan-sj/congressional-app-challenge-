@@ -64,3 +64,7 @@ flutter test
 - Route recommendations must only use sufficiently verified legal paths and must never promise that a route is safe.
 
 See [Setup instructions](docs/SETUP.md), [data contract](docs/INTEGRATION_CONTRACT.md), and [original logistics plan](docs/LOGISTICS.md).
+
+
+## Optional Supabase test integration
+See [Flutter connection guide](docs/CONNECT_FLUTTER.md).
