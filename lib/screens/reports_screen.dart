@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/hazard_report.dart';
+import '../services/hazard_ranking_service.dart';
 import '../widgets/app_ui.dart';
 
 class ReportsScreen extends StatelessWidget {
@@ -29,6 +30,17 @@ class ReportsScreen extends StatelessWidget {
     final sorted = [...reports]
       ..sort((a, b) => b.severity.compareTo(a.severity));
     final located = reports.where((report) => report.hasLocation).length;
+    final rankings = const HazardRankingService().rank(reports);
+    final highPriority = rankings
+        .where(
+          (ranking) =>
+              ranking.hasLocation && ranking.priority == HazardPriority.high,
+        )
+        .length;
+    final groupedDuplicates = rankings.fold<int>(
+      0,
+      (sum, ranking) => sum + ranking.duplicateCount,
+    );
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
@@ -40,12 +52,10 @@ class ReportsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 PageIntro(
-                  eyebrow: 'Community observations',
-                  title: isLive ? 'Database reports' : 'Example reports',
-                  description: isLive
-                      ? 'Reviewed entries and your pending tests only; not a validated risk score.'
-                      : 'Review fictional test records, sorted by self-reported severity. These are not validated safety scores.',
-                  icon: Icons.assignment_outlined,
+                  eyebrow: 'Hazard Ranking',
+                  title: 'Prioritize community concerns',
+                  description: 'Nearby duplicate reports are grouped and ranked by severity, frequency, and recency. Scores support review; they do not prove a location is unsafe.',
+                  icon: Icons.leaderboard_outlined,
                 ),
                 const SizedBox(height: 24),
                 Wrap(
@@ -53,23 +63,50 @@ class ReportsScreen extends StatelessWidget {
                   runSpacing: 12,
                   children: [
                     LabeledIcon(
-                      icon: Icons.description_outlined,
-                      label: isLive ? 'Visible entries' : 'Fictional entries',
-                      value: '${reports.length} reports',
+                      icon: Icons.priority_high,
+                      label: 'High-priority locations',
+                      value: '$highPriority identified',
                     ),
                     LabeledIcon(
-                      icon: Icons.location_on_outlined,
-                      label: 'Selected map points',
-                      value: '$located located',
+                      icon: Icons.hub_outlined,
+                      label: 'Ranked locations',
+                      value: '${rankings.length} groups',
                     ),
                     LabeledIcon(
-                      icon: Icons.fact_check_outlined,
-                      label: 'Current environment',
-                      value: isLive ? 'Pilot database' : 'Demo only',
+                      icon: Icons.content_copy_outlined,
+                      label: 'Duplicate reports grouped',
+                      value: '$groupedDuplicates duplicates',
                     ),
                   ],
                 ),
                 const SizedBox(height: 22),
+                const _ScoreExplanation(),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Text(
+                      'Ranked hazard locations',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const Spacer(),
+                    StatusPill(
+                      label: 'Score: high to low',
+                      icon: Icons.sort,
+                      backgroundColor: colors.surfaceContainerHighest,
+                      foregroundColor: colors.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (rankings.isEmpty)
+                  _EmptyReports(isLive: isLive)
+                else
+                  for (var index = 0; index < rankings.length; index++) ...[
+                    _RankingCard(ranking: rankings[index], rank: index + 1),
+                    if (index != rankings.length - 1)
+                      const SizedBox(height: 12),
+                  ],
+                const SizedBox(height: 28),
                 Row(
                   children: [
                     Text(
@@ -78,7 +115,7 @@ class ReportsScreen extends StatelessWidget {
                     ),
                     const Spacer(),
                     StatusPill(
-                      label: 'Severity: high to low',
+                      label: '${reports.length} reports • $located located',
                       icon: Icons.sort,
                       backgroundColor: colors.surfaceContainerHighest,
                       foregroundColor: colors.onSurfaceVariant,
@@ -102,6 +139,193 @@ class ReportsScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ScoreExplanation extends StatelessWidget {
+  const _ScoreExplanation();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SectionCard(
+      color: colors.primaryContainer.withValues(alpha: .3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.calculate_outlined, color: colors.primary),
+              const SizedBox(width: 10),
+              Text(
+                'How the 100-point score is calculated',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              LabeledIcon(
+                icon: Icons.signal_cellular_alt,
+                label: 'Severity • up to 50 points',
+                value: 'Average severity ÷ 5 × 50',
+              ),
+              LabeledIcon(
+                icon: Icons.groups_outlined,
+                label: 'Frequency • up to 30 points',
+                value: 'Reports ÷ 5 × 30; capped at 5',
+              ),
+              LabeledIcon(
+                icon: Icons.schedule,
+                label: 'Recency • up to 20 points',
+                value: '20 / 15 / 10 / 5 / 0 by age',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Reports of the same hazard type within 75 meters are one location group. '
+            'Recency awards 20 points at 0–7 days, 15 at 8–30, 10 at 31–90, '
+            '5 at 91–180, and 0 after 180 days. High priority begins at 70; '
+            'elevated begins at 45. Resolved and rejected reports are excluded.',
+            style: TextStyle(color: colors.onSurfaceVariant, height: 1.45),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RankingCard extends StatelessWidget {
+  const _RankingCard({required this.ranking, required this.rank});
+
+  final HazardRanking ranking;
+  final int rank;
+
+  Color _priorityColor() => switch (ranking.priority) {
+    HazardPriority.high => const Color(0xFFB3261E),
+    HazardPriority.elevated => const Color(0xFF9A5A00),
+    HazardPriority.monitor => const Color(0xFF35685F),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final priorityColor = _priorityColor();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: priorityColor.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    '#$rank',
+                    style: TextStyle(
+                      color: priorityColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 9,
+                        runSpacing: 7,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            ranking.type.label,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          StatusPill(
+                            label: ranking.priority.label,
+                            backgroundColor: priorityColor.withValues(
+                              alpha: .12,
+                            ),
+                            foregroundColor: priorityColor,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        ranking.hasLocation
+                            ? '${ranking.latitude!.toStringAsFixed(5)}, ${ranking.longitude!.toStringAsFixed(5)}'
+                            : 'Location unavailable',
+                        style: TextStyle(color: colors.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    Text(
+                      ranking.totalScore.toStringAsFixed(1),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: priorityColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    Text(
+                      '/ 100',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                StatusPill(
+                  label:
+                      'Severity ${ranking.severityScore.toStringAsFixed(1)}/50',
+                  icon: Icons.signal_cellular_alt,
+                ),
+                StatusPill(
+                  label:
+                      'Frequency ${ranking.frequencyScore.toStringAsFixed(1)}/30',
+                  icon: Icons.groups_outlined,
+                ),
+                StatusPill(
+                  label:
+                      'Recency ${ranking.recencyScore.toStringAsFixed(1)}/20',
+                  icon: Icons.schedule,
+                ),
+                StatusPill(
+                  label: ranking.reportCount == 1
+                      ? '1 report'
+                      : '${ranking.reportCount} grouped reports',
+                  icon: Icons.content_copy_outlined,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

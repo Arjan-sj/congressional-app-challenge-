@@ -50,6 +50,8 @@ void main() {
     expect(schools.single.name, 'Schaumburg High School');
     expect(schools.single.levels, {SchoolLevel.high});
     expect(schools.single.address, contains('Schaumburg IL 60194'));
+    expect(schools.single.city, 'Schaumburg');
+    expect(schools.single.zipCode, '60194');
     repository.close();
   });
 }

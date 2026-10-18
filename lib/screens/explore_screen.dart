@@ -40,7 +40,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   );
 
   final MapController _controller = MapController();
-  final UrbanSchoolsRepository _schoolsRepository = UrbanSchoolsRepository();
+  UrbanSchoolsRepository? _schoolsRepository;
+  final TextEditingController _schoolSearchController = TextEditingController();
   LatLng? _selectedPoint;
   HazardType? _filter;
   List<School> _schools = const [];
@@ -53,7 +54,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.enableMapTiles) _loadSchools();
+    if (widget.enableMapTiles) {
+      _schoolsRepository = UrbanSchoolsRepository();
+      _loadSchools();
+    }
   }
 
   List<HazardReport> get _mappedReports => widget.reports
@@ -64,7 +68,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    _schoolsRepository.close();
+    _schoolsRepository?.close();
+    _schoolSearchController.dispose();
     super.dispose();
   }
 
@@ -75,7 +80,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _schoolError = null;
     });
     try {
-      final schools = await _schoolsRepository.fetchState(requestedFips);
+      final schools = await _schoolsRepository!.fetchState(requestedFips);
       if (!mounted || requestedFips != _selectedStateFips) return;
       setState(() {
         _schools = schools;
@@ -106,7 +111,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _selectedStateFips = fips;
       _schools = const [];
     });
-    _loadSchools(fitState: true);
+    if (widget.enableMapTiles) _loadSchools(fitState: true);
   }
 
   void _zoomBy(double amount) {
@@ -125,30 +130,31 @@ class _ExploreScreenState extends State<ExploreScreen> {
         .toList(growable: false);
   }
 
-  void _showSchoolDetails(School school) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 4, 24, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(school.name, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            Text(school.levelLabel),
-            Text(school.district),
-            if (school.address.isNotEmpty) Text(school.address),
-            const SizedBox(height: 14),
-            const Text(
-              'Source: Urban Institute Education Data Portal, '
-              'NCES Common Core of Data 2024.',
-            ),
-          ],
-        ),
-      ),
+  List<School> get _schoolSearchResults {
+    final query = _schoolSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) return const [];
+    final state = usStates.firstWhere(
+      (candidate) => candidate.fips == _selectedStateFips,
     );
+    return _schools
+        .where((school) {
+          final searchable = [
+            school.name,
+            school.city,
+            school.state,
+            school.zipCode,
+            school.district,
+            state.name,
+            state.code,
+          ].join(' ').toLowerCase();
+          return searchable.contains(query);
+        })
+        .take(10)
+        .toList(growable: false);
+  }
+
+  void _focusSchool(School school) {
+    _controller.move(school.location, 16);
   }
 
   Color _markerColor(ReportStatus status) => switch (status) {
@@ -291,6 +297,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final colors = Theme.of(context).colorScheme;
     final mappedReports = _mappedReports;
     final visibleSchools = _visibleSchools;
+    final searchResults = _schoolSearchResults;
     final markers = <Marker>[
       for (final school in visibleSchools)
         Marker(
@@ -303,7 +310,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               padding: EdgeInsets.zero,
               visualDensity: VisualDensity.compact,
               tooltip: 'View ${school.name}',
-              onPressed: () => _showSchoolDetails(school),
+              onPressed: () => _controller.move(school.location, 16),
               icon: const Icon(Icons.school, size: 20),
             ),
           ),
@@ -334,7 +341,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const PageIntro(
-                  eyebrow: 'Explore the pilot area',
+                  eyebrow: 'School & Community Support',
                   title: 'Explore U.S. public schools',
                   description: 'Choose a state, zoom into a community, and select a point to document a walking or biking concern.',
                   icon: Icons.travel_explore,
@@ -344,6 +351,126 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+                SectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.manage_search, color: colors.primary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Find your school or community',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                Text(
+                                  'Choose a state, then search by school name, city, ZIP code, or district.',
+                                  style: TextStyle(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          SizedBox(
+                            width: 245,
+                            child: DropdownButtonFormField<int>(
+                              initialValue: _selectedStateFips,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'State',
+                                prefixIcon: Icon(Icons.public),
+                              ),
+                              items: [
+                                for (final state in usStates)
+                                  DropdownMenuItem(
+                                    value: state.fips,
+                                    child: Text(
+                                      '${state.code} — ${state.name}',
+                                    ),
+                                  ),
+                              ],
+                              onChanged: _selectState,
+                            ),
+                          ),
+                          SizedBox(
+                            width: 500,
+                            child: TextField(
+                              controller: _schoolSearchController,
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                labelText: 'Search schools and communities',
+                                hintText: 'School, city, ZIP, or district',
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon:
+                                    _schoolSearchController.text.isNotEmpty
+                                    ? IconButton(
+                                        tooltip: 'Clear school search',
+                                        onPressed: () {
+                                          _schoolSearchController.clear();
+                                          setState(() {});
+                                        },
+                                        icon: const Icon(Icons.clear),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_schoolSearchController.text.trim().isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        if (_loadingSchools)
+                          const LinearProgressIndicator()
+                        else if (searchResults.isEmpty)
+                          Text(
+                            'No matching public schools found in the selected state.',
+                            style: TextStyle(color: colors.onSurfaceVariant),
+                          )
+                        else
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 320),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: colors.outlineVariant),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: searchResults.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final school = searchResults[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.school_outlined),
+                                  title: Text(school.name),
+                                  subtitle: Text(
+                                    '${school.city}, ${school.state} ${school.zipCode} • ${school.district}',
+                                  ),
+                                  trailing: const Icon(
+                                    Icons.center_focus_strong,
+                                  ),
+                                  onTap: () => _focusSchool(school),
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
                 SectionCard(
                   padding: EdgeInsets.zero,
                   child: Column(
@@ -373,30 +500,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 ],
                               ),
                             ),
-                            SizedBox(
-                              width: 190,
-                              child: DropdownButtonFormField<int>(
-                                initialValue: _selectedStateFips,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'School state',
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                ),
-                                items: [
-                                  for (final state in usStates)
-                                    DropdownMenuItem(
-                                      value: state.fips,
-                                      child: Text(
-                                        '${state.code} — ${state.name}',
-                                      ),
-                                    ),
-                                ],
-                                onChanged: _selectState,
-                              ),
+                            StatusPill(
+                              label: _zoom < _schoolMarkerZoom
+                                  ? 'Zoom in to show schools'
+                                  : '${visibleSchools.length} schools in view',
+                              icon: Icons.school_outlined,
+                              backgroundColor: colors.primaryContainer,
+                              foregroundColor: colors.onPrimaryContainer,
                             ),
                           ],
                         ),

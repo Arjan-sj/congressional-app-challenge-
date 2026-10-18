@@ -10,7 +10,9 @@ void main() {
     await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
 
     expect(find.text('SafeRoutes'), findsOneWidget);
+    expect(find.text('SCHOOL & COMMUNITY SUPPORT'), findsOneWidget);
     expect(find.text('Explore U.S. public schools'), findsOneWidget);
+    expect(find.text('Search schools and communities'), findsOneWidget);
     expect(find.text('PROTOTYPE'), findsOneWidget);
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.remove), findsOneWidget);
@@ -22,8 +24,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.list_alt_outlined));
     await tester.pumpAndSettle();
 
-    expect(find.text('Example reports'), findsOneWidget);
-    expect(find.text('Missing sidewalk'), findsOneWidget);
+    expect(find.text('Prioritize community concerns'), findsOneWidget);
+    expect(find.text('How the 100-point score is calculated'), findsOneWidget);
+    expect(find.text('Missing sidewalk'), findsWidgets);
   });
 
   testWidgets('Map tap is retained when switching straight to Report tab', (

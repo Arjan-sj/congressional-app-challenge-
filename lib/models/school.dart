@@ -15,6 +15,9 @@ class School {
     required this.name,
     required this.district,
     required this.address,
+    required this.city,
+    required this.state,
+    required this.zipCode,
     required this.latitude,
     required this.longitude,
     required this.levels,
@@ -24,6 +27,9 @@ class School {
   final String name;
   final String district;
   final String address;
+  final String city;
+  final String state;
+  final String zipCode;
   final double latitude;
   final double longitude;
   final Set<SchoolLevel> levels;
