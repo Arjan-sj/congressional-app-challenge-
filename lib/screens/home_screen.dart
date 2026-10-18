@@ -7,7 +7,9 @@ import 'report_form_screen.dart';
 import 'reports_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.enableMapTiles = true});
+
+  final bool enableMapTiles;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -16,23 +18,44 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final List<HazardReport> _reports = buildDemoReports();
+  double? _selectedLatitude;
+  double? _selectedLongitude;
+
+  void _startReport(double latitude, double longitude) {
+    setState(() {
+      _selectedLatitude = latitude;
+      _selectedLongitude = longitude;
+      _selectedIndex = 2;
+    });
+  }
 
   void _addDemoReport(HazardReport report) {
     setState(() {
       _reports.insert(0, report);
-      _selectedIndex = 1;
+      _selectedLatitude = null;
+      _selectedLongitude = null;
+      _selectedIndex = 0;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Saved in this session only — not uploaded.')),
+      const SnackBar(content: Text('Demo report saved in memory, not online.')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final screens = [
-      ExploreScreen(reports: _reports),
+      ExploreScreen(
+        reports: _reports,
+        onReportAt: _startReport,
+        enableMapTiles: widget.enableMapTiles,
+      ),
       ReportsScreen(reports: _reports),
-      ReportFormScreen(onSubmit: _addDemoReport),
+      ReportFormScreen(
+        onSubmit: _addDemoReport,
+        onChooseLocation: () => setState(() => _selectedIndex = 0),
+        selectedLatitude: _selectedLatitude,
+        selectedLongitude: _selectedLongitude,
+      ),
     ];
 
     return Scaffold(
