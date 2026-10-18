@@ -216,114 +216,119 @@ class _RankingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final priorityColor = _priorityColor();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: priorityColor.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    '#$rank',
-                    style: TextStyle(
-                      color: priorityColor,
-                      fontWeight: FontWeight.w800,
+    return Semantics(
+      container: true,
+      label:
+          'Rank $rank, ${ranking.type.label}, ${ranking.priority.label}, score ${ranking.totalScore.toStringAsFixed(1)} out of 100, ${ranking.reportCount} reports.',
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: priorityColor.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      '#$rank',
+                      style: TextStyle(
+                        color: priorityColor,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 9,
-                        runSpacing: 7,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            ranking.type.label,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          StatusPill(
-                            label: ranking.priority.label,
-                            backgroundColor: priorityColor.withValues(
-                              alpha: .12,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 9,
+                          runSpacing: 7,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              ranking.type.label,
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                            foregroundColor: priorityColor,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
+                            StatusPill(
+                              label: ranking.priority.label,
+                              backgroundColor: priorityColor.withValues(
+                                alpha: .12,
+                              ),
+                              foregroundColor: priorityColor,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ranking.hasLocation
+                              ? '${ranking.latitude!.toStringAsFixed(5)}, ${ranking.longitude!.toStringAsFixed(5)}'
+                              : 'Location unavailable',
+                          style: TextStyle(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    children: [
                       Text(
-                        ranking.hasLocation
-                            ? '${ranking.latitude!.toStringAsFixed(5)}, ${ranking.longitude!.toStringAsFixed(5)}'
-                            : 'Location unavailable',
-                        style: TextStyle(color: colors.onSurfaceVariant),
+                        ranking.totalScore.toStringAsFixed(1),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: priorityColor,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      Text(
+                        '/ 100',
+                        style: TextStyle(
+                          color: colors.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
-                ),
-                Column(
-                  children: [
-                    Text(
-                      ranking.totalScore.toStringAsFixed(1),
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(
-                            color: priorityColor,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    Text(
-                      '/ 100',
-                      style: TextStyle(
-                        color: colors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                StatusPill(
-                  label:
-                      'Severity ${ranking.severityScore.toStringAsFixed(1)}/50',
-                  icon: Icons.signal_cellular_alt,
-                ),
-                StatusPill(
-                  label:
-                      'Frequency ${ranking.frequencyScore.toStringAsFixed(1)}/30',
-                  icon: Icons.groups_outlined,
-                ),
-                StatusPill(
-                  label:
-                      'Recency ${ranking.recencyScore.toStringAsFixed(1)}/20',
-                  icon: Icons.schedule,
-                ),
-                StatusPill(
-                  label: ranking.reportCount == 1
-                      ? '1 report'
-                      : '${ranking.reportCount} grouped reports',
-                  icon: Icons.content_copy_outlined,
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  StatusPill(
+                    label:
+                        'Severity ${ranking.severityScore.toStringAsFixed(1)}/50',
+                    icon: Icons.signal_cellular_alt,
+                  ),
+                  StatusPill(
+                    label:
+                        'Frequency ${ranking.frequencyScore.toStringAsFixed(1)}/30',
+                    icon: Icons.groups_outlined,
+                  ),
+                  StatusPill(
+                    label:
+                        'Recency ${ranking.recencyScore.toStringAsFixed(1)}/20',
+                    icon: Icons.schedule,
+                  ),
+                  StatusPill(
+                    label: ranking.reportCount == 1
+                        ? '1 report'
+                        : '${ranking.reportCount} grouped reports',
+                    icon: Icons.content_copy_outlined,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

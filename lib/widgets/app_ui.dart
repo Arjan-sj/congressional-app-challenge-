@@ -125,13 +125,12 @@ class StatusPill extends StatelessWidget {
         color: backgroundColor ?? colors.secondaryContainer,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: 5,
+        runSpacing: 3,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 15, color: foreground),
-            const SizedBox(width: 5),
-          ],
+          if (icon != null) Icon(icon, size: 15, color: foreground),
           Text(
             label,
             style: Theme.of(context).textTheme.labelMedium

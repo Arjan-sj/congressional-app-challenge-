@@ -1,14 +1,64 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'models/accessibility_preferences.dart';
 import 'screens/home_screen.dart';
+import 'services/accessibility_preferences_store.dart';
 
-class SafeRoutesApp extends StatelessWidget {
-  const SafeRoutesApp({super.key, this.enableMapTiles = true, this.liveClient});
+class SafeRoutesApp extends StatefulWidget {
+  const SafeRoutesApp({
+    super.key,
+    this.enableMapTiles = true,
+    this.liveClient,
+    this.persistAccessibilityPreferences = true,
+  });
 
   /// false in widget tests to keep them independent of network map tiles.
   final bool enableMapTiles;
   final SupabaseClient? liveClient;
+  final bool persistAccessibilityPreferences;
+
+  @override
+  State<SafeRoutesApp> createState() => _SafeRoutesAppState();
+}
+
+class _SafeRoutesAppState extends State<SafeRoutesApp> {
+  static const _store = AccessibilityPreferencesStore();
+  AccessibilityPreferences _preferences = const AccessibilityPreferences();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.persistAccessibilityPreferences) {
+      unawaited(_loadPreferences());
+    }
+  }
+
+  Future<void> _loadPreferences() async {
+    try {
+      final loaded = await _store.load();
+      if (mounted) setState(() => _preferences = loaded);
+    } catch (_) {
+      // Keep defaults when local storage is unavailable.
+    }
+  }
+
+  void _updatePreferences(AccessibilityPreferences preferences) {
+    setState(() => _preferences = preferences);
+    if (widget.persistAccessibilityPreferences) {
+      unawaited(_savePreferences(preferences));
+    }
+  }
+
+  Future<void> _savePreferences(AccessibilityPreferences preferences) async {
+    try {
+      await _store.save(preferences);
+    } catch (_) {
+      // The active choices still apply for this session.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +66,7 @@ class SafeRoutesApp extends StatelessWidget {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: Brightness.light,
+      contrastLevel: _preferences.highContrast ? .5 : 0,
       surface: const Color(0xFFF7FAF9),
     );
 
@@ -24,6 +75,7 @@ class SafeRoutesApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
         colorScheme: colorScheme,
         scaffoldBackgroundColor: const Color(0xFFF3F7F6),
         textTheme: const TextTheme(
@@ -103,6 +155,11 @@ class SafeRoutesApp extends StatelessWidget {
             textStyle: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            minimumSize: Size.square(_preferences.largerControls ? 56 : 48),
+          ),
+        ),
         navigationBarTheme: NavigationBarThemeData(
           height: 72,
           backgroundColor: Colors.white,
@@ -120,7 +177,25 @@ class SafeRoutesApp extends StatelessWidget {
           ),
         ),
       ),
-      home: HomeScreen(enableMapTiles: enableMapTiles, liveClient: liveClient),
+      builder: (context, child) {
+        if (!_preferences.largerText) return child!;
+        final media = MediaQuery.of(context);
+        final systemScale = media.textScaler.scale(1);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: TextScaler.linear(
+              systemScale < 1.25 ? 1.25 : systemScale,
+            ),
+          ),
+          child: child!,
+        );
+      },
+      home: HomeScreen(
+        enableMapTiles: widget.enableMapTiles,
+        liveClient: widget.liveClient,
+        accessibilityPreferences: _preferences,
+        onAccessibilityPreferencesChanged: _updatePreferences,
+      ),
     );
   }
 }

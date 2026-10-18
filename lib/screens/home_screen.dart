@@ -5,18 +5,29 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/demo_reports.dart';
 import '../data/pilot_school.dart';
+import '../models/accessibility_preferences.dart';
 import '../models/hazard_report.dart';
 import '../services/supabase_hazard_repository.dart';
+import 'accessibility_settings_dialog.dart';
 import 'auth_dialog.dart';
 import 'explore_screen.dart';
 import 'report_form_screen.dart';
 import 'reports_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.enableMapTiles = true, this.liveClient});
+  const HomeScreen({
+    super.key,
+    this.enableMapTiles = true,
+    this.liveClient,
+    required this.accessibilityPreferences,
+    required this.onAccessibilityPreferencesChanged,
+  });
 
   final bool enableMapTiles;
   final SupabaseClient? liveClient;
+  final AccessibilityPreferences accessibilityPreferences;
+  final ValueChanged<AccessibilityPreferences>
+  onAccessibilityPreferencesChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -113,7 +124,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedIndex = 0;
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Test report saved to Supabase as unverified.')),
+      const SnackBar(
+        content: Text('Test report saved to Supabase as unverified.'),
+      ),
     );
   }
 
@@ -127,6 +140,18 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) await _refreshReports();
   }
 
+  Future<void> _showAccessibilitySettings() async {
+    final selected = await showDialog<AccessibilityPreferences>(
+      context: context,
+      builder: (_) => AccessibilitySettingsDialog(
+        initialPreferences: widget.accessibilityPreferences,
+      ),
+    );
+    if (selected != null) {
+      widget.onAccessibilityPreferencesChanged(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screens = [
@@ -136,6 +161,9 @@ class _HomeScreenState extends State<HomeScreen> {
         onSelectLocation: _selectLocation,
         enableMapTiles: widget.enableMapTiles,
         isLive: _live,
+        showMapTextAlternative: widget.accessibilityPreferences.showMapText,
+        enableKeyboardNavigation:
+            widget.accessibilityPreferences.keyboardMapNavigation,
       ),
       ReportsScreen(reports: _reports, isLive: _live),
       ReportFormScreen(
@@ -190,6 +218,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Accessibility settings',
+            onPressed: _showAccessibilitySettings,
+            icon: Icon(
+              Icons.accessibility_new,
+              color: widget.accessibilityPreferences.hasEnabledChoices
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+          ),
           if (_live)
             IconButton(
               tooltip: widget.liveClient!.auth.currentUser == null

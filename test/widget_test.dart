@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/app.dart';
@@ -7,21 +8,117 @@ void main() {
   testWidgets('Explore shows school map and explicit zoom controls', (
     tester,
   ) async {
-    await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
 
     expect(find.text('SafeRoutes'), findsOneWidget);
     expect(find.text('SCHOOL & COMMUNITY SUPPORT'), findsOneWidget);
     expect(find.text('Explore U.S. public schools'), findsOneWidget);
     expect(find.text('Search schools and communities'), findsOneWidget);
+    expect(find.text('Map information in text'), findsNothing);
+    expect(find.byTooltip('Accessibility settings'), findsOneWidget);
     expect(find.text('PROTOTYPE'), findsOneWidget);
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.remove), findsOneWidget);
     expect(find.byIcon(Icons.my_location), findsOneWidget);
   });
 
+  testWidgets('Explore remains usable on mobile with enlarged text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search schools and communities'), findsOneWidget);
+    expect(find.text('Map information in text'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Map accepts keyboard zoom controls', (tester) async {
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
+    await tester.tap(find.byTooltip('Accessibility settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keyboard map navigation'));
+    await tester.tap(find.text('Save choices'));
+    await tester.pumpAndSettle();
+
+    final map = find.byType(FlutterMap);
+    await tester.ensureVisible(map);
+    await tester.pumpAndSettle();
+    await tester.tap(map);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Accessibility choices independently enable map text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
+
+    expect(find.text('Map information in text'), findsNothing);
+    await tester.tap(find.byTooltip('Accessibility settings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Accessibility settings'), findsOneWidget);
+    expect(find.text('Larger text'), findsOneWidget);
+    expect(find.text('Higher contrast colors'), findsOneWidget);
+    expect(find.text('Larger controls'), findsOneWidget);
+    expect(find.text('Keyboard map navigation'), findsOneWidget);
+    expect(find.text('Show map information as text'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Show map information as text'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show map information as text'));
+    await tester.tap(find.text('Save choices'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Map information in text'), findsOneWidget);
+  });
+
   testWidgets('Reports tab shows fictional examples', (tester) async {
-    await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
-    await tester.tap(find.byIcon(Icons.list_alt_outlined));
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.byIcon(Icons.list_alt_outlined),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Prioritize community concerns'), findsOneWidget);
@@ -32,7 +129,12 @@ void main() {
   testWidgets('Map tap is retained when switching straight to Report tab', (
     tester,
   ) async {
-    await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
 
     final map = find.byType(FlutterMap);
     expect(map, findsOneWidget);
@@ -55,7 +157,12 @@ void main() {
   testWidgets('Demo submission requires a selected map location', (
     tester,
   ) async {
-    await tester.pumpWidget(const SafeRoutesApp(enableMapTiles: false));
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
     await tester.tap(find.byIcon(Icons.add_circle_outline));
     await tester.pumpAndSettle();
 
