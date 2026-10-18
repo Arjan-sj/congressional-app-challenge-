@@ -1,120 +1,193 @@
-# Congressional App Challenge Project
+# SafeRoutes 🚸
+### Making School Journeys Safer in Schaumburg, Illinois
 
-A Flutter-based application being developed for the Congressional App Challenge.
+SafeRoutes is a community-driven web application designed to help students, parents, and local officials identify potential walking and biking hazards around schools in Schaumburg, Illinois.
 
-## Tech Stack
+By combining community reports, interactive maps, and data-driven safety analysis, SafeRoutes aims to make school routes safer, more accessible, and easier to evaluate.
 
-- **Framework:** Flutter
-- **Language:** Dart
-- **UI:** Material 3
-- **Platforms:** iOS, Android, Web, Windows, macOS, and Linux
+> **Project:** Congressional App Challenge  
+> **Location:** Schaumburg, Illinois  
+> **Platform:** Web application  
+> **Status:** In development
 
-Flutter was selected because it allows the application to share one codebase across multiple platforms while keeping the interface responsive and consistent.
+---
 
-## Current Features
+## 📌 The Problem
 
-The current build provides the base structure of the application, including:
+Walking or biking to school should be a safe and accessible option for students. However, missing sidewalks, difficult intersections, blocked pathways, and other infrastructure problems can make certain routes challenging.
 
-- Home screen
-- Multi-screen navigation
-- Prototype feature screen
-- About/project information screen
-- Reusable UI components
-- Basic application state
-- Material 3 theme
+In September 2026, the Village of Schaumburg issued a request related to a Safe Routes to School safety audit and community travel plan covering sidewalk and bikeway connections to four elementary schools and two junior high schools.
 
-The main functionality of the app will be built on top of this structure.
+This creates an opportunity to investigate local transportation safety needs and develop a tool that helps residents communicate concerns and understand potential hazards.
 
-## Project Structure
+SafeRoutes aims to complement existing village transportation resources by focusing on school-specific safety reporting, route information, and analysis of community feedback.
 
-```text
-lib/
-├── main.dart
-├── screens/
-│   ├── home_screen.dart
-│   ├── prototype_screen.dart
-│   └── about_screen.dart
-└── widgets/
-    └── feature_card.dart
-```
+## 💡 Our Solution
 
-### `main.dart`
+SafeRoutes provides a centralized platform where community members can report walking and biking hazards, explore reported issues on a map, and identify locations that may deserve further investigation.
 
-Initializes the application, theme, and starting screen.
+Rather than relying on scattered reports or individual observations, the platform aims to organize community feedback into useful information for residents and local decision-makers.
 
-### `screens/`
+## ✨ Planned Features
 
-Contains the main pages of the application.
+### 🗺️ Interactive Safety Map
+- Display reported hazards around participating schools.
+- Visualize reported locations using map markers and categories.
+- Filter reports by hazard type, severity, and status.
+- Explore available sidewalk and bikeway information from verified sources.
 
-### `widgets/`
+### 🚨 Community Hazard Reporting
+Users will be able to submit reports for issues such as:
 
-Contains reusable interface components that can be shared across multiple screens.
+- Missing or damaged sidewalks
+- Difficult or potentially unsafe intersections
+- Blocked walking and biking paths
+- Missing pedestrian crossings
+- Poorly connected bicycle routes
+- Other walking and biking accessibility concerns
 
-## Getting Started
+Reports may include a location, category, description, and optional photograph.
 
-### Requirements
+### 📊 Data-Driven Risk Prioritization
+SafeRoutes aims to identify recurring problem areas by analyzing:
 
-Install Flutter and verify the installation with:
+- Number of reports at a location
+- Reported severity
+- Type of hazard
+- Age and status of reports
+- Proximity to participating schools
 
-```bash
-flutter doctor
-```
+The resulting scores will help prioritize locations for further review. They will not represent official safety ratings or replace professional traffic engineering assessments.
 
-### Install Dependencies
+### 🧭 Route Comparison
+Where sufficient verified data is available, users will be able to compare potential walking and biking routes.
 
-From the project directory:
+The application aims to highlight reported hazards and known infrastructure gaps, helping families make more informed decisions about their journeys.
 
-```bash
-flutter pub get
-```
+SafeRoutes will not label a route completely safe simply because no hazards have been reported.
 
-### Run the App
+### 📈 Community Insights
+- Summarize frequently reported hazard categories.
+- Identify clusters of reports near schools.
+- Display trends in reports over time.
+- Help community members understand which issues are recurring.
 
-Run on a connected device or emulator:
+### 🏫 School-Focused Information
+Organize reports and map views around participating schools, allowing users to explore transportation concerns in the areas most relevant to their daily journeys.
 
-```bash
-flutter run
-```
+## 🎯 Goals
 
-Run in Chrome:
+1. Make it easier for students and families to report transportation safety concerns.
+2. Improve visibility into walking and biking hazards near schools.
+3. Identify recurring infrastructure problems through community feedback.
+4. Encourage evidence-based discussions about school transportation safety.
+5. Support community engagement with local transportation planning.
 
-```bash
-flutter run -d chrome
-```
+## 🛠️ Proposed Technology Stack
 
-## Development
+The final technology stack may change during development.
 
-The main feature of the application is currently being developed in:
+| Component | Proposed Technology |
+|---|---|
+| Frontend | HTML, CSS, JavaScript |
+| Interactive maps | Leaflet |
+| Map data | OpenStreetMap |
+| Backend API | Python with Flask or FastAPI |
+| Database | PostgreSQL with PostGIS, or SQLite for an initial prototype |
+| Data analysis | Python |
+| Version control | Git and GitHub |
 
-```text
-lib/screens/prototype_screen.dart
-```
+### Architecture
 
-As the project expands, additional folders may be added for application logic, data models, APIs, and other services.
+The proposed application will use a web frontend to display map data and collect reports. A backend API will validate submissions, store reports, and provide aggregated information for the map and analytics dashboard.
 
-A possible future structure is:
+Geographic database capabilities may be introduced as the project grows.
 
-```text
-lib/
-├── models/
-├── screens/
-├── services/
-├── utils/
-└── widgets/
-```
+## 🔒 Privacy and Responsible Reporting
 
-## Version Control
+Because SafeRoutes concerns school communities and minors, privacy is a priority.
 
-The project can be initialized as a Git repository with:
+- Avoid collecting unnecessary personal information.
+- Do not publicly display students' identities or contact details.
+- Do not require users to disclose their home addresses.
+- Review uploaded photographs to prevent the exposure of faces, license plates, and other identifying information.
+- Validate reports and provide a way to flag inaccurate or inappropriate submissions.
+- Clearly distinguish community-reported concerns from verified infrastructure information.
 
-```bash
-git init
-git add .
-git commit -m "Initial app structure"
-```
+The application is intended to support community awareness, not to replace official reporting channels or emergency services.
 
-## Status
+## 🗺️ Development Roadmap
 
-**In Development**
+### Phase 1: Research and Planning
+- [ ] Review Schaumburg's Safe Routes to School planning materials.
+- [ ] Identify participating schools and relevant public map datasets.
+- [ ] Survey students and parents about walking and biking concerns.
+- [ ] Examine existing transportation reporting tools.
 
-The current version establishes the application's base architecture and interface. Core functionality and project-specific features will be added throughout development.
+### Phase 2: Initial Website
+- [ ] Create the website layout and navigation.
+- [ ] Integrate an interactive map.
+- [ ] Display sample hazard markers.
+- [ ] Implement hazard categories and filters.
+
+### Phase 3: Reporting System
+- [ ] Build a hazard submission form.
+- [ ] Add backend validation and database storage.
+- [ ] Implement report status tracking.
+- [ ] Add safeguards against spam and duplicate reports.
+
+### Phase 4: Data Analysis
+- [ ] Develop a transparent hazard prioritization algorithm.
+- [ ] Visualize report concentrations around schools.
+- [ ] Build a dashboard for community-level trends.
+- [ ] Add route comparison using verified infrastructure data.
+
+### Phase 5: Testing and Evaluation
+- [ ] Test usability with community volunteers.
+- [ ] Verify map accuracy and report handling.
+- [ ] Compare findings with available public transportation assessments.
+- [ ] Document limitations and opportunities for improvement.
+
+## 📏 Measuring Success
+
+SafeRoutes will evaluate its usefulness through measurable outcomes, including:
+
+- Number of valid, actionable hazard reports
+- Number of participating community members
+- Percentage of reports successfully reviewed
+- Time required to locate and submit a report
+- Agreement between mapped information and verified observations
+- User feedback on clarity and ease of use
+
+These measurements will help determine whether the application provides useful information beyond existing resources.
+
+## 🤝 Community Impact
+
+SafeRoutes is intended to help students, families, and community stakeholders better understand transportation concerns around schools.
+
+By organizing local observations into an accessible map and structured dataset, the project could support more informed conversations about pedestrian safety, bicycle accessibility, and infrastructure improvements.
+
+The long-term goal is to demonstrate how technology can help communities identify problems, communicate their needs, and make better-informed decisions.
+
+## 📚 Sources and Further Research
+
+- [Village of Schaumburg Official Website](https://www.villageofschaumburg.com/)
+- [Village of Schaumburg Transportation Resources](https://www.villageofschaumburg.com/government/transportation)
+- [BusyBids](https://www.busybids.org/) — procurement information related to the reported September 2026 project
+- [OpenStreetMap](https://www.openstreetmap.org/) — potential source of geographic data
+
+Project-specific procurement documents, participating school names, and available infrastructure datasets should be verified before being incorporated into the application.
+
+## 👨‍💻 Contributing
+
+Contributions may include frontend development, map integration, backend development, data analysis, usability testing, and documentation.
+
+Before contributing, open an issue to discuss the proposed change. Do not submit personal information about students or unverified allegations about individuals.
+
+## 📄 License
+
+A license has not yet been selected. A license should be added before the project is distributed for reuse.
+
+---
+
+**SafeRoutes — Better information for safer school journeys.**
