@@ -1,0 +1,30 @@
+# Dart / Flutter build outputs
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+
+# Editors / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local keys and environment configuration
+.env
+.env.*
+!.env.example
+*.local
+*.keystore
+*.jks
+**/service-account.json
+**/service_account.json
+
+# Never commit generated private files or screenshots containing user data
+private/
+secrets/
