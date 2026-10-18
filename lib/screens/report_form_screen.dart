@@ -11,12 +11,14 @@ class ReportFormScreen extends StatefulWidget {
     required this.onChooseLocation,
     this.selectedLatitude,
     this.selectedLongitude,
+    this.isLive = false,
   });
 
-  final ValueChanged<HazardReport> onSubmit;
+  final Future<void> Function(HazardReport) onSubmit;
   final VoidCallback onChooseLocation;
   final double? selectedLatitude;
   final double? selectedLongitude;
+  final bool isLive;
 
   @override
   State<ReportFormScreen> createState() => _ReportFormScreenState();
@@ -27,6 +29,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   final _descriptionController = TextEditingController();
   HazardType _type = HazardType.missingSidewalk;
   double _severity = 3;
+  bool _saving = false;
 
   bool get _hasLocation =>
       widget.selectedLatitude != null && widget.selectedLongitude != null;
@@ -44,28 +47,39 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     HazardType.bikeRoute => Icons.pedal_bike,
   };
 
-  void _save() {
-    if (!_hasLocation || !_formKey.currentState!.validate()) return;
+  Future<void> _save() async {
+    if (_saving || !_hasLocation || !_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onSubmit(
+        HazardReport(
+          id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+          schoolId: PilotSchool.id,
+          type: _type,
+          severity: _severity.round(),
+          description: _descriptionController.text.trim(),
+          createdAt: DateTime.now(),
+          latitude: widget.selectedLatitude,
+          longitude: widget.selectedLongitude,
+        ),
+      );
 
-    widget.onSubmit(
-      HazardReport(
-        id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-        schoolId: PilotSchool.id,
-        type: _type,
-        severity: _severity.round(),
-        description: _descriptionController.text.trim(),
-        createdAt: DateTime.now(),
-        latitude: widget.selectedLatitude,
-        longitude: widget.selectedLongitude,
-      ),
-    );
-
-    _descriptionController.clear();
-    _formKey.currentState?.reset();
-    setState(() {
-      _type = HazardType.missingSidewalk;
-      _severity = 3;
-    });
+      if (!mounted) return;
+      _descriptionController.clear();
+      _formKey.currentState?.reset();
+      setState(() {
+        _type = HazardType.missingSidewalk;
+        _severity = 3;
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -99,17 +113,19 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: const Color(0xFFF1D9A7)),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.science_outlined,
                                 color: Color(0xFF795300),
                               ),
-                              SizedBox(width: 12),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'For testing only. Reports are fictional and are not sent to officials or saved to a database.',
-                                  style: TextStyle(
+                                  widget.isLive
+                                      ? 'Pilot database mode. Sign in first; example reports are saved as unverified. Do not submit real student routes.'
+                                      : 'For testing only. Reports are fictional and are not sent to officials or saved to a database.',
+                                  style: const TextStyle(
                                     color: Color(0xFF604300),
                                     height: 1.4,
                                   ),
@@ -366,9 +382,13 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                     ] else
                       const Spacer(),
                     FilledButton.icon(
-                      onPressed: _hasLocation ? _save : null,
+                      onPressed: _hasLocation && !_saving ? _save : null,
                       icon: const Icon(Icons.save_outlined),
-                      label: const Text('Save demo report locally'),
+                      label: Text(_saving
+                          ? 'Saving...'
+                          : widget.isLive
+                              ? 'Save example to Supabase'
+                              : 'Save demo report locally'),
                     ),
                   ],
                 ),

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/home_screen.dart';
 
 class SafeRoutesApp extends StatelessWidget {
-  const SafeRoutesApp({super.key, this.enableMapTiles = true});
+  const SafeRoutesApp({super.key, this.enableMapTiles = true, this.liveClient});
 
   /// false in widget tests to keep them independent of network map tiles.
   final bool enableMapTiles;
+  final SupabaseClient? liveClient;
 
   @override
   Widget build(BuildContext context) {
@@ -118,7 +120,7 @@ class SafeRoutesApp extends StatelessWidget {
           ),
         ),
       ),
-      home: HomeScreen(enableMapTiles: enableMapTiles),
+      home: HomeScreen(enableMapTiles: enableMapTiles, liveClient: liveClient),
     );
   }
 }
