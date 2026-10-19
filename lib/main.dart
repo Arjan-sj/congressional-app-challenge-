@@ -3,8 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 
-const _url = String.fromEnvironment('SUPABASE_URL');
-const _key = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+const _url = "https://bnvmlxgdqgwjtxgtsaak.supabase.co";
+const _key = "sb_publishable_FoOUlumYGi4Gw35445XCRw_63QESI8k";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

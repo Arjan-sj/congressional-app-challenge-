@@ -5,13 +5,16 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../models/safety_route.dart';
+import 'hazard_avoidance_service.dart';
 
 enum RouteFailure {
   missingApiKey,
   unauthorized,
   rateLimited,
   unavailable,
+  noRoute,
   malformed,
+  endpointInsideHazard,
 }
 
 class RouteServiceException implements Exception {
@@ -42,11 +45,14 @@ class OpenRouteService {
   final Uri baseUri;
   final Duration requestTimeout;
 
+  static const _avoidanceCircleSegments = 24;
+
   bool get isConfigured => apiKey.trim().isNotEmpty;
 
   Future<List<RouteCandidate>> compare({
     required LatLng origin,
     required LatLng destination,
+    Iterable<LatLng> avoidLocations = const [],
   }) async {
     if (!isConfigured) {
       throw const RouteServiceException(
@@ -59,11 +65,13 @@ class OpenRouteService {
         origin: origin,
         destination: destination,
         profile: RouteProfile.walking,
+        avoidLocations: avoidLocations,
       ),
       fetchRoutes(
         origin: origin,
         destination: destination,
         profile: RouteProfile.cycling,
+        avoidLocations: avoidLocations,
       ),
     ]);
     return [for (final routes in results) ...routes];
@@ -73,6 +81,7 @@ class OpenRouteService {
     required LatLng origin,
     required LatLng destination,
     required RouteProfile profile,
+    Iterable<LatLng> avoidLocations = const [],
   }) async {
     if (!isConfigured) {
       throw const RouteServiceException(
@@ -83,6 +92,23 @@ class OpenRouteService {
     final endpoint = baseUri.replace(
       path: '/v2/directions/${profile.apiValue}/geojson',
     );
+    final relevantAvoidLocations = _normalizeAvoidLocations(avoidLocations);
+    _validateRoutePoints(origin, destination, relevantAvoidLocations);
+    final requestBody = <String, dynamic>{
+      'coordinates': [
+        [origin.longitude, origin.latitude],
+        [destination.longitude, destination.latitude],
+      ],
+      'alternative_routes': {
+        'target_count': 2,
+        'share_factor': 0.7,
+        'weight_factor': 1.6,
+      },
+      if (relevantAvoidLocations.isNotEmpty)
+        'options': {
+          'avoid_polygons': _avoidanceGeometry(relevantAvoidLocations),
+        },
+    };
     final response = await _client
         .post(
           endpoint,
@@ -91,17 +117,7 @@ class OpenRouteService {
             'Authorization': apiKey,
             'Content-Type': 'application/json; charset=utf-8',
           },
-          body: jsonEncode({
-            'coordinates': [
-              [origin.longitude, origin.latitude],
-              [destination.longitude, destination.latitude],
-            ],
-            'alternative_routes': {
-              'target_count': 2,
-              'share_factor': 0.7,
-              'weight_factor': 1.6,
-            },
-          }),
+          body: jsonEncode(requestBody),
         )
         .timeout(requestTimeout);
 
@@ -123,6 +139,12 @@ class OpenRouteService {
         'OpenRouteService is temporarily unavailable.',
       );
     }
+    if (response.statusCode == 400 || response.statusCode == 404) {
+      throw const RouteServiceException(
+        RouteFailure.noRoute,
+        'No route could avoid the active 100 m report areas. Try moving an endpoint or selecting a shorter trip.',
+      );
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw RouteServiceException(
         RouteFailure.unavailable,
@@ -135,7 +157,12 @@ class OpenRouteService {
       final features = json['features'] as List<dynamic>? ?? const [];
       return [
         for (var index = 0; index < features.length; index++)
-          _decodeRoute(features[index] as Map<String, dynamic>, profile, index),
+          _decodeRoute(
+            features[index] as Map<String, dynamic>,
+            profile,
+            index,
+            relevantAvoidLocations.length,
+          ),
       ];
     } on FormatException catch (error) {
       throw RouteServiceException(
@@ -154,6 +181,7 @@ class OpenRouteService {
     Map<String, dynamic> feature,
     RouteProfile profile,
     int index,
+    int avoidedHazards,
   ) {
     final geometry = feature['geometry'] as Map<String, dynamic>;
     final coordinates = geometry['coordinates'] as List<dynamic>;
@@ -177,7 +205,74 @@ class OpenRouteService {
       points: points,
       distanceMeters: (summary['distance'] as num).toDouble(),
       durationSeconds: (summary['duration'] as num).toDouble(),
+      avoidedHazards: avoidedHazards,
     );
+  }
+
+  List<LatLng> _normalizeAvoidLocations(Iterable<LatLng> locations) {
+    final unique = <String, LatLng>{};
+    for (final location in locations) {
+      if (!location.latitude.isFinite ||
+          !location.longitude.isFinite ||
+          location.latitude < -90 ||
+          location.latitude > 90 ||
+          location.longitude < -180 ||
+          location.longitude > 180) {
+        continue;
+      }
+      final key =
+          '${location.latitude.toStringAsFixed(6)},${location.longitude.toStringAsFixed(6)}';
+      unique[key] = location;
+    }
+    return unique.values.toList(growable: false);
+  }
+
+  void _validateRoutePoints(
+    LatLng origin,
+    LatLng destination,
+    List<LatLng> avoidLocations,
+  ) {
+    const distance = Distance();
+    for (final location in avoidLocations) {
+      final originDistance = distance.as(LengthUnit.Meter, origin, location);
+      final destinationDistance = distance.as(
+        LengthUnit.Meter,
+        destination,
+        location,
+      );
+      if (originDistance < HazardAvoidanceService.radiusMeters ||
+          destinationDistance < HazardAvoidanceService.radiusMeters) {
+        throw const RouteServiceException(
+          RouteFailure.endpointInsideHazard,
+          'The route start or destination is within 100 m of an active report. Move the point outside the highlighted area.',
+        );
+      }
+    }
+  }
+
+  Map<String, dynamic> _avoidanceGeometry(List<LatLng> locations) {
+    final polygons = [
+      for (final location in locations) [_circleRing(location)],
+    ];
+    if (polygons.length == 1) {
+      return {'type': 'Polygon', 'coordinates': polygons.single};
+    }
+    return {'type': 'MultiPolygon', 'coordinates': polygons};
+  }
+
+  List<List<double>> _circleRing(LatLng center) {
+    const distance = Distance();
+    final ring = <List<double>>[];
+    for (var index = 0; index < _avoidanceCircleSegments; index++) {
+      final point = distance.offset(
+        center,
+        HazardAvoidanceService.radiusMeters,
+        360 * index / _avoidanceCircleSegments,
+      );
+      ring.add([point.longitude, point.latitude]);
+    }
+    ring.add(List<double>.from(ring.first));
+    return ring;
   }
 
   void close() {

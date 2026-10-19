@@ -60,6 +60,7 @@ flutter test
 ## Safety and privacy
 
 - **An unverified report is not a verified hazard.** The map always shows each report's review status.
+- Walking and cycling requests avoid 100 m buffers around active visible reports as a precaution; only verified reports affect the numeric safety score.
 - Missing OpenStreetMap infrastructure is unknown; it must never be described as unsafe.
 - Do not store student names, home addresses, school commute routines, or photos of identifiable children.
 - Never put Supabase `service_role` / secret keys into client code or GitHub.

@@ -38,7 +38,9 @@ OpenStreetMap sidewalk and cycleway tagging varies by community. A missing line 
 
 ## Route scores
 
-OpenRouteService is queried for `foot-walking` and `cycling-regular` alternatives. Each route begins at 80 points:
+OpenRouteService is queried for `foot-walking` and `cycling-regular` alternatives. Before routing, each visible active report (`unverified` or `verified`) becomes a 100 m GeoJSON avoid area. Resolved and rejected reports do not block a route. If a start or destination is already inside an avoid area, the app asks the user to move that point.
+
+Each returned route begins at 80 points:
 
 - subtract up to 15 points for extra distance compared with the shortest route of the same mode;
 - subtract `severity × 4` for each verified, unresolved hazard within 50 m, capped at 40 points;

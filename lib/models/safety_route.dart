@@ -16,6 +16,7 @@ class RouteCandidate {
     required this.points,
     required this.distanceMeters,
     required this.durationSeconds,
+    this.avoidedHazards = 0,
   });
 
   final String id;
@@ -23,6 +24,7 @@ class RouteCandidate {
   final List<LatLng> points;
   final double distanceMeters;
   final double durationSeconds;
+  final int avoidedHazards;
 }
 
 class RouteSafetyAssessment {

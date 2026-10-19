@@ -68,7 +68,7 @@ class RoutePlannerPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Tap the map, assign that point as the start or destination, then compare OpenRouteService alternatives.',
+            'Tap the map, assign that point as the start or destination, then compare OpenRouteService alternatives that avoid active reports by 100 m.',
             style: TextStyle(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
@@ -137,7 +137,7 @@ class RoutePlannerPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Score = 80 base − up to 15 for extra distance − verified unresolved hazards (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
+              'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − verified unresolved hazards (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
@@ -276,6 +276,14 @@ class _RouteResultCard extends StatelessWidget {
                 'Verified hazards −${assessment.hazardPenalty.toStringAsFixed(0)} '
                 '(${assessment.nearbyVerifiedHazards}) • '
                 'Mapped infrastructure +${assessment.infrastructureBonus.toStringAsFixed(1)}',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                route.avoidedHazards == 0
+                    ? 'No active report buffers were inside this route area.'
+                    : 'Avoided ${route.avoidedHazards} active report ${route.avoidedHazards == 1 ? 'area' : 'areas'} using 100 m buffers.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: colors.onSurfaceVariant),
               ),
               const SizedBox(height: 4),
               Text(

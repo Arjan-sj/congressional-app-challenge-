@@ -14,6 +14,7 @@ import '../models/osm_infrastructure.dart';
 import '../models/safety_route.dart';
 import '../models/school.dart';
 import '../services/device_location_service.dart';
+import '../services/hazard_avoidance_service.dart';
 import '../services/open_route_service.dart';
 import '../services/overpass_service.dart';
 import '../services/route_safety_scorer.dart';
@@ -59,6 +60,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final MapController _controller = MapController();
   final OverpassService _overpassService = OverpassService();
   final OpenRouteService _routeService = OpenRouteService();
+  final HazardAvoidanceService _hazardAvoidanceService =
+      const HazardAvoidanceService();
   final DeviceLocationService _locationService = const DeviceLocationService();
   final RouteSafetyScorer _routeScorer = const RouteSafetyScorer();
   UrbanSchoolsRepository? _schoolsRepository;
@@ -72,11 +75,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<School> _schools = const [];
   InfrastructureSnapshot? _infrastructure;
   List<RouteSafetyAssessment> _routeAssessments = const [];
+  List<LatLng> _routeAvoidLocations = const [];
   final Set<MapLayer> _visibleLayers = MapLayer.values.toSet();
   LatLngBounds? _visibleBounds;
   Timer? _infrastructureDebounce;
   int _selectedStateFips = 17;
   int _infrastructureRequestVersion = 0;
+  int _routeRequestVersion = 0;
   double _zoom = 15;
   bool _loadingSchools = false;
   bool _loadingInfrastructure = false;
@@ -113,6 +118,36 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _schoolSearchController.dispose();
     _mapFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ExploreScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_routeReportSignature(oldWidget.reports) ==
+        _routeReportSignature(widget.reports)) {
+      return;
+    }
+    _routeAssessments = const [];
+    _routeAvoidLocations = const [];
+    _selectedRouteId = null;
+    _loadingRoutes = false;
+    _routeRequestVersion++;
+    if (_routeOrigin != null && _routeDestination != null) {
+      _routeError = 'Reports changed. Compare again to refresh avoidance.';
+    }
+  }
+
+  String _routeReportSignature(Iterable<HazardReport> reports) {
+    final parts =
+        _hazardAvoidanceService
+            .activeReports(reports)
+            .map(
+              (report) =>
+                  '${report.id}:${report.status.name}:${report.severity}:${report.latitude}:${report.longitude}',
+            )
+            .toList()
+          ..sort();
+    return parts.join('|');
   }
 
   void _handleCameraChanged(MapCamera camera) {
@@ -305,6 +340,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _routeOrigin = _selectedPoint;
       _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _loadingRoutes = false;
+      _routeRequestVersion++;
       _routeError = null;
       _selectedRouteId = null;
     });
@@ -315,6 +353,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _routeDestination = _selectedPoint;
       _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _loadingRoutes = false;
+      _routeRequestVersion++;
       _routeError = null;
       _selectedRouteId = null;
     });
@@ -325,6 +366,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _routeOrigin = null;
       _routeDestination = null;
       _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _loadingRoutes = false;
+      _routeRequestVersion++;
       _routeError = null;
       _selectedRouteId = null;
     });
@@ -334,17 +378,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final origin = _routeOrigin;
     final destination = _routeDestination;
     if (origin == null || destination == null || _loadingRoutes) return;
+    final avoidLocations = _hazardAvoidanceService.locationsForRoute(
+      reports: widget.reports,
+      origin: origin,
+      destination: destination,
+    );
+    final requestVersion = ++_routeRequestVersion;
     setState(() {
       _loadingRoutes = true;
       _routeError = null;
       _routeAssessments = const [];
+      _routeAvoidLocations = avoidLocations;
     });
     try {
       final routes = await _routeService.compare(
         origin: origin,
         destination: destination,
+        avoidLocations: avoidLocations,
       );
-      if (!mounted) return;
+      if (!mounted || requestVersion != _routeRequestVersion) return;
       final assessments = _routeScorer.score(
         routes: routes,
         hazards: widget.reports,
@@ -362,13 +414,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       });
       if (assessments.isNotEmpty) _fitRoute(assessments.first);
     } on TimeoutException {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _routeRequestVersion) return;
       setState(() {
         _loadingRoutes = false;
         _routeError = 'Route comparison timed out. Try again shortly.';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestVersion != _routeRequestVersion) return;
       setState(() {
         _loadingRoutes = false;
         _routeError = error.toString();
@@ -1024,6 +1076,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                                 pattern: StrokePattern.dashed(
                                                   segments: const [10, 7],
                                                 ),
+                                              ),
+                                          ],
+                                        ),
+                                      if (_routeAvoidLocations.isNotEmpty &&
+                                          _visibleLayers.contains(
+                                            MapLayer.hazards,
+                                          ))
+                                        CircleLayer(
+                                          key: const ValueKey(
+                                            'hazard-avoidance-layer',
+                                          ),
+                                          circles: [
+                                            for (final location
+                                                in _routeAvoidLocations)
+                                              CircleMarker(
+                                                point: location,
+                                                radius: HazardAvoidanceService
+                                                    .radiusMeters,
+                                                useRadiusInMeter: true,
+                                                color: const Color(0x24C4473A),
+                                                borderColor: const Color(
+                                                  0xFFC4473A,
+                                                ),
+                                                borderStrokeWidth: 2,
                                               ),
                                           ],
                                         ),
