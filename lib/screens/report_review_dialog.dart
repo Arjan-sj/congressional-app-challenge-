@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/hazard_report.dart';
 import '../models/report_moderation.dart';
+import '../widgets/hazard_photo_view.dart';
 
 class ReportReviewDialog extends StatefulWidget {
   const ReportReviewDialog({
@@ -12,6 +13,7 @@ class ReportReviewDialog extends StatefulWidget {
     required this.canViewHistory,
     this.onFlag,
     this.onModerate,
+    this.onDelete,
   });
 
   final HazardReport report;
@@ -19,6 +21,7 @@ class ReportReviewDialog extends StatefulWidget {
   final bool canViewHistory;
   final Future<void> Function(String reason)? onFlag;
   final Future<void> Function(ReportStatus status, String reason)? onModerate;
+  final Future<void> Function()? onDelete;
 
   @override
   State<ReportReviewDialog> createState() => _ReportReviewDialogState();
@@ -90,6 +93,44 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
     }
   }
 
+  Future<void> _delete() async {
+    if (_busy || widget.onDelete == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this report?'),
+        content: const Text(
+          'The report and its stored photo evidence will be permanently removed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete report'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.onDelete!();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Unable to delete: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   String _date(DateTime date) => date.toLocal().toString().split('.').first;
 
   @override
@@ -126,6 +167,15 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
                     : 'No map location provided',
               ),
               if (report.isDemo) const Text('Fictional example · Demo only'),
+              if (report.photoSignedUrl case final url?) ...[
+                const SizedBox(height: 16),
+                HazardPhotoView(url: url),
+              ] else if (report.hasPhoto) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Photo evidence is attached but its temporary link is unavailable. Refresh and try again.',
+                ),
+              ],
               const Divider(height: 28),
               if (data == null && _error == null)
                 const LinearProgressIndicator(),
@@ -249,6 +299,12 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
           ),
         ),
         actions: [
+          if (widget.onDelete != null)
+            TextButton.icon(
+              onPressed: _busy ? null : _delete,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete report'),
+            ),
           TextButton(
             onPressed: _busy ? null : () => Navigator.of(context).pop(),
             child: const Text('Close'),

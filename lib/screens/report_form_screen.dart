@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/pilot_school.dart';
+import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
 import '../widgets/app_ui.dart';
 
@@ -13,14 +15,21 @@ class ReportFormScreen extends StatefulWidget {
     this.selectedLongitude,
     this.isLive = false,
     this.submissionEnabled = true,
+    this.pickPhoto,
   });
 
-  final Future<void> Function(HazardReport) onSubmit;
+  final Future<void> Function(
+    HazardReport report,
+    HazardPhotoDraft? photo,
+    ValueChanged<double> onProgress,
+  )
+  onSubmit;
   final VoidCallback onChooseLocation;
   final double? selectedLatitude;
   final double? selectedLongitude;
   final bool isLive;
   final bool submissionEnabled;
+  final Future<HazardPhotoDraft?> Function(ImageSource source)? pickPhoto;
 
   @override
   State<ReportFormScreen> createState() => _ReportFormScreenState();
@@ -32,6 +41,10 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   HazardType _type = HazardType.missingSidewalk;
   double _severity = 3;
   bool _saving = false;
+  bool _choosingPhoto = false;
+  HazardPhotoDraft? _photo;
+  String? _photoError;
+  double? _uploadProgress;
 
   bool get _hasLocation =>
       widget.selectedLatitude != null && widget.selectedLongitude != null;
@@ -49,9 +62,52 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     HazardType.bikeRoute => Icons.pedal_bike,
   };
 
+  Future<void> _choosePhoto(ImageSource source) async {
+    if (_choosingPhoto || _saving) return;
+    setState(() {
+      _choosingPhoto = true;
+      _photoError = null;
+    });
+    try {
+      final photo = widget.pickPhoto != null
+          ? await widget.pickPhoto!(source)
+          : await _pickPhoto(source);
+      if (photo != null && mounted) setState(() => _photo = photo);
+    } on HazardPhotoException catch (error) {
+      if (mounted) setState(() => _photoError = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _photoError = source == ImageSource.camera
+              ? 'The camera is unavailable on this device. Upload an existing image instead.'
+              : 'The image could not be opened. Try another JPEG, PNG, or WebP file.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _choosingPhoto = false);
+    }
+  }
+
+  Future<HazardPhotoDraft?> _pickPhoto(ImageSource source) async {
+    final file = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 2400,
+      imageQuality: 88,
+    );
+    if (file == null) return null;
+    return HazardPhotoDraft.validate(
+      bytes: await file.readAsBytes(),
+      fileName: file.name,
+      declaredMimeType: file.mimeType,
+    );
+  }
+
   Future<void> _save() async {
     if (_saving || !_hasLocation || !_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _uploadProgress = _photo == null ? null : 0;
+    });
     try {
       await widget.onSubmit(
         HazardReport(
@@ -65,6 +121,12 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
           longitude: widget.selectedLongitude,
           isDemo: false,
         ),
+        _photo,
+        (progress) {
+          if (mounted) {
+            setState(() => _uploadProgress = progress.clamp(0, 1).toDouble());
+          }
+        },
       );
 
       if (!mounted) return;
@@ -73,6 +135,9 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       setState(() {
         _type = HazardType.missingSidewalk;
         _severity = 3;
+        _photo = null;
+        _photoError = null;
+        _uploadProgress = null;
       });
     } catch (error) {
       if (mounted) {
@@ -80,7 +145,12 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
             .showSnackBar(SnackBar(content: Text('Could not save: $error')));
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _uploadProgress = null;
+        });
+      }
     }
   }
 
@@ -347,6 +417,116 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                                   Text('Needs attention'),
                                 ],
                               ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const _StepLabel(
+                                number: '4',
+                                label: 'Add photo evidence (optional)',
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'JPEG, PNG, or WebP • maximum 5 MB. Avoid faces, license plates, student names, and home addresses.',
+                                style: TextStyle(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              if (_photo case final photo?) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Image.memory(
+                                    photo.bytes,
+                                    key: const ValueKey('photo-preview'),
+                                    width: double.infinity,
+                                    height: 250,
+                                    fit: BoxFit.cover,
+                                    semanticLabel: 'Selected hazard photo',
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  '${photo.fileName} • ${photo.sizeMegabytes.toStringAsFixed(1)} MB',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: _choosingPhoto || _saving
+                                        ? null
+                                        : () =>
+                                              _choosePhoto(ImageSource.camera),
+                                    icon: const Icon(
+                                      Icons.photo_camera_outlined,
+                                    ),
+                                    label: Text(
+                                      _photo == null
+                                          ? 'Take photo'
+                                          : 'Replace with camera',
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _choosingPhoto || _saving
+                                        ? null
+                                        : () =>
+                                              _choosePhoto(ImageSource.gallery),
+                                    icon: const Icon(
+                                      Icons.upload_file_outlined,
+                                    ),
+                                    label: Text(
+                                      _photo == null
+                                          ? 'Upload image'
+                                          : 'Replace image',
+                                    ),
+                                  ),
+                                  if (_photo != null)
+                                    TextButton.icon(
+                                      onPressed: _saving
+                                          ? null
+                                          : () => setState(() {
+                                              _photo = null;
+                                              _photoError = null;
+                                            }),
+                                      icon: const Icon(Icons.delete_outline),
+                                      label: const Text('Remove'),
+                                    ),
+                                ],
+                              ),
+                              if (_choosingPhoto) ...[
+                                const SizedBox(height: 12),
+                                const LinearProgressIndicator(),
+                              ],
+                              if (_photoError != null) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  _photoError!,
+                                  style: TextStyle(color: colors.error),
+                                ),
+                              ],
+                              if (_saving && _photo != null) ...[
+                                const SizedBox(height: 14),
+                                LinearProgressIndicator(value: _uploadProgress),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _uploadProgress == null ||
+                                          _uploadProgress! < .25
+                                      ? 'Preparing secure photo upload…'
+                                      : _uploadProgress! < 1
+                                      ? 'Uploading photo evidence…'
+                                      : 'Photo uploaded',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ],
                           ),
                         ),

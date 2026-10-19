@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:congressional_app/models/hazard_photo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/models/hazard_report.dart';
 import 'package:congressional_app/screens/report_form_screen.dart';
+import 'package:image_picker/image_picker.dart';
 
 void main() {
   testWidgets('Selected location is included in a Supabase report', (
@@ -17,8 +22,9 @@ void main() {
             selectedLongitude: -88.106632,
             onChooseLocation: () {},
             isLive: true,
-            onSubmit: (report) async {
+            onSubmit: (report, photo, onProgress) async {
               saved = report;
+              expect(photo, isNull);
             },
           ),
         ),
@@ -51,7 +57,8 @@ void main() {
             selectedLongitude: -88.106632,
             isLive: true,
             onChooseLocation: () {},
-            onSubmit: (_) async => throw StateError('Test connection failure'),
+            onSubmit: (_, _, _) async =>
+                throw StateError('Test connection failure'),
           ),
         ),
       ),
@@ -72,5 +79,58 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  testWidgets('photo can be previewed, replaced, and removed before submit', (
+    tester,
+  ) async {
+    var picks = 0;
+    final pngBytes = Uint8List.fromList(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportFormScreen(
+            selectedLatitude: 42.027416,
+            selectedLongitude: -88.106632,
+            isLive: true,
+            onChooseLocation: () {},
+            onSubmit: (_, _, _) async {},
+            pickPhoto: (source) async {
+              expect(source, ImageSource.gallery);
+              picks++;
+              return HazardPhotoDraft.validate(
+                bytes: pngBytes,
+                fileName: 'evidence-$picks.png',
+                declaredMimeType: 'image/png',
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upload image'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo-preview')), findsOneWidget);
+    expect(find.text('Replace image'), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Replace image'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('evidence-2.png'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Remove'));
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('photo-preview')), findsNothing);
+    expect(find.text('Upload image'), findsOneWidget);
   });
 }
