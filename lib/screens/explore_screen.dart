@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,12 +7,22 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/pilot_school.dart';
+import '../models/geo_bounds.dart';
 import '../models/hazard_report.dart';
+import '../models/map_layer.dart';
+import '../models/osm_infrastructure.dart';
+import '../models/safety_route.dart';
 import '../models/school.dart';
+import '../services/device_location_service.dart';
+import '../services/open_route_service.dart';
+import '../services/overpass_service.dart';
+import '../services/route_safety_scorer.dart';
 import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/map_layer_controls.dart';
+import '../widgets/route_planner_panel.dart';
 
-/// Displays a real interactive basemap with local, fictional demo entries.
+/// Displays a real interactive basemap with live infrastructure and reports.
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({
     super.key,
@@ -39,26 +50,43 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   static const _minZoom = 4.0;
   static const _maxZoom = 19.0;
-  static const _schoolMarkerZoom = 8.0;
-  static const _maxSchoolMarkers = 600;
+  static const _infrastructureZoom = 14.0;
   static const String _tileUrl = String.fromEnvironment(
     'MAP_TILE_URL',
     defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   );
 
   final MapController _controller = MapController();
+  final OverpassService _overpassService = OverpassService();
+  final OpenRouteService _routeService = OpenRouteService();
+  final DeviceLocationService _locationService = const DeviceLocationService();
+  final RouteSafetyScorer _routeScorer = const RouteSafetyScorer();
   UrbanSchoolsRepository? _schoolsRepository;
   final TextEditingController _schoolSearchController = TextEditingController();
   final FocusNode _mapFocusNode = FocusNode(debugLabel: 'Community map');
   LatLng? _selectedPoint;
+  LatLng? _userLocation;
+  LatLng? _routeOrigin;
+  LatLng? _routeDestination;
   HazardType? _filter;
   List<School> _schools = const [];
+  InfrastructureSnapshot? _infrastructure;
+  List<RouteSafetyAssessment> _routeAssessments = const [];
+  final Set<MapLayer> _visibleLayers = MapLayer.values.toSet();
   LatLngBounds? _visibleBounds;
+  Timer? _infrastructureDebounce;
   int _selectedStateFips = 17;
+  int _infrastructureRequestVersion = 0;
   double _zoom = 15;
   bool _loadingSchools = false;
+  bool _loadingInfrastructure = false;
+  bool _loadingRoutes = false;
+  bool _findingLocation = false;
   bool _mapHasFocus = false;
   String? _schoolError;
+  String? _infrastructureError;
+  String? _routeError;
+  String? _selectedRouteId;
 
   @override
   void initState() {
@@ -77,11 +105,82 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   void dispose() {
+    _infrastructureDebounce?.cancel();
     _controller.dispose();
+    _overpassService.close();
+    _routeService.close();
     _schoolsRepository?.close();
     _schoolSearchController.dispose();
     _mapFocusNode.dispose();
     super.dispose();
+  }
+
+  void _handleCameraChanged(MapCamera camera) {
+    setState(() {
+      _zoom = camera.zoom;
+      _visibleBounds = camera.visibleBounds;
+    });
+    _scheduleInfrastructureLoad(camera.visibleBounds, camera.zoom);
+  }
+
+  void _scheduleInfrastructureLoad(LatLngBounds bounds, double zoom) {
+    _infrastructureDebounce?.cancel();
+    if (!widget.enableMapTiles || zoom < _infrastructureZoom) {
+      if (_loadingInfrastructure || _infrastructureError != null) {
+        setState(() {
+          _loadingInfrastructure = false;
+          _infrastructureError = null;
+        });
+      }
+      return;
+    }
+    final visible = GeoBounds.fromMapBounds(bounds);
+    final snapshot = _infrastructure;
+    if (snapshot != null && snapshot.bounds.containsBounds(visible)) return;
+    _infrastructureDebounce = Timer(
+      const Duration(milliseconds: 850),
+      () => _loadInfrastructure(visible),
+    );
+  }
+
+  Future<void> _loadInfrastructure(
+    GeoBounds bounds, {
+    bool forceRefresh = false,
+  }) async {
+    final requestVersion = ++_infrastructureRequestVersion;
+    setState(() {
+      _loadingInfrastructure = true;
+      _infrastructureError = null;
+    });
+    try {
+      final snapshot = await _overpassService.fetch(
+        bounds,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
+      setState(() {
+        _infrastructure = snapshot;
+        _loadingInfrastructure = false;
+      });
+    } on TimeoutException {
+      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
+      setState(() {
+        _loadingInfrastructure = false;
+        _infrastructureError = 'OpenStreetMap infrastructure timed out. The basemap and hazards still work.';
+      });
+    } catch (error) {
+      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
+      setState(() {
+        _loadingInfrastructure = false;
+        _infrastructureError = error.toString();
+      });
+    }
+  }
+
+  void _retryInfrastructure() {
+    final bounds = _visibleBounds;
+    if (bounds == null || _zoom < _infrastructureZoom) return;
+    _loadInfrastructure(GeoBounds.fromMapBounds(bounds), forceRefresh: true);
   }
 
   Future<void> _loadSchools({bool fitState = false}) async {
@@ -142,14 +241,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _controller.move(LatLng(latitude, longitude), camera.zoom);
   }
 
-  List<School> get _visibleSchools {
-    final bounds = _visibleBounds;
-    if (_zoom < _schoolMarkerZoom || bounds == null) return const [];
-    return _schools
-        .where((school) => bounds.contains(school.location))
-        .take(_maxSchoolMarkers)
-        .toList(growable: false);
-  }
+  List<OsmMapFeature> get _osmSchools =>
+      _infrastructure
+          ?.ofType(InfrastructureType.school)
+          .toList(growable: false) ??
+      const [];
+
+  List<OsmMapFeature> get _osmCrossings =>
+      _infrastructure
+          ?.ofType(InfrastructureType.crossing)
+          .toList(growable: false) ??
+      const [];
+
+  List<OsmMapFeature> _features(InfrastructureType type) =>
+      _infrastructure?.ofType(type).toList(growable: false) ?? const [];
 
   List<School> get _schoolSearchResults {
     final query = _schoolSearchController.text.trim().toLowerCase();
@@ -176,6 +281,109 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _focusSchool(School school) {
     _controller.move(school.location, 16);
+  }
+
+  Future<void> _findCurrentLocation() async {
+    if (_findingLocation) return;
+    setState(() => _findingLocation = true);
+    try {
+      final location = await _locationService.currentLocation();
+      if (!mounted) return;
+      setState(() => _userLocation = location);
+      _controller.move(location, 16);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _findingLocation = false);
+    }
+  }
+
+  void _useSelectedAsRouteOrigin() {
+    if (_selectedPoint == null) return;
+    setState(() {
+      _routeOrigin = _selectedPoint;
+      _routeAssessments = const [];
+      _routeError = null;
+      _selectedRouteId = null;
+    });
+  }
+
+  void _useSelectedAsRouteDestination() {
+    if (_selectedPoint == null) return;
+    setState(() {
+      _routeDestination = _selectedPoint;
+      _routeAssessments = const [];
+      _routeError = null;
+      _selectedRouteId = null;
+    });
+  }
+
+  void _clearRoute() {
+    setState(() {
+      _routeOrigin = null;
+      _routeDestination = null;
+      _routeAssessments = const [];
+      _routeError = null;
+      _selectedRouteId = null;
+    });
+  }
+
+  Future<void> _compareRoutes() async {
+    final origin = _routeOrigin;
+    final destination = _routeDestination;
+    if (origin == null || destination == null || _loadingRoutes) return;
+    setState(() {
+      _loadingRoutes = true;
+      _routeError = null;
+      _routeAssessments = const [];
+    });
+    try {
+      final routes = await _routeService.compare(
+        origin: origin,
+        destination: destination,
+      );
+      if (!mounted) return;
+      final assessments = _routeScorer.score(
+        routes: routes,
+        hazards: widget.reports,
+        infrastructure: _infrastructure,
+      );
+      setState(() {
+        _routeAssessments = assessments;
+        _selectedRouteId = assessments.isEmpty
+            ? null
+            : assessments.first.route.id;
+        _loadingRoutes = false;
+        _routeError = assessments.isEmpty
+            ? 'No walking or cycling alternatives were returned for these points.'
+            : null;
+      });
+      if (assessments.isNotEmpty) _fitRoute(assessments.first);
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _loadingRoutes = false;
+        _routeError = 'Route comparison timed out. Try again shortly.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadingRoutes = false;
+        _routeError = error.toString();
+      });
+    }
+  }
+
+  void _fitRoute(RouteSafetyAssessment assessment) {
+    setState(() => _selectedRouteId = assessment.route.id);
+    _controller.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(assessment.route.points),
+        padding: const EdgeInsets.all(46),
+      ),
+    );
   }
 
   Color _markerColor(ReportStatus status) => switch (status) {
@@ -304,7 +512,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ],
         ),
         child: IconButton(
-          tooltip: 'View ${report.type.label} example',
+          tooltip: 'View ${report.type.label} report',
           onPressed: () => _showReportDetails(report),
           icon: const Icon(Icons.warning_amber_rounded),
           color: Colors.white,
@@ -313,12 +521,38 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  Marker _schoolMarker(OsmMapFeature school) => Marker(
+    point: school.center,
+    width: 44,
+    height: 44,
+    child: Tooltip(
+      message: school.name,
+      child: IconButton.filled(
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        tooltip: 'Center ${school.name}',
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: MapLayerStyle.school,
+          side: const BorderSide(color: MapLayerStyle.school, width: 2),
+        ),
+        onPressed: () => _controller.move(school.center, 17),
+        icon: const Icon(Icons.school, size: 20),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final compactLayout = MediaQuery.sizeOf(context).width < 600;
     final mappedReports = _mappedReports;
-    final visibleSchools = _visibleSchools;
+    final visibleSchools = _visibleLayers.contains(MapLayer.schools)
+        ? _osmSchools
+        : const <OsmMapFeature>[];
+    final visibleCrossings = _visibleLayers.contains(MapLayer.crossings)
+        ? _osmCrossings
+        : const <OsmMapFeature>[];
     final visibleReports = _visibleBounds == null
         ? const <HazardReport>[]
         : mappedReports
@@ -329,36 +563,83 @@ class _ExploreScreenState extends State<ExploreScreen> {
               )
               .toList(growable: false);
     final searchResults = _schoolSearchResults;
+    final featureCounts = {
+      for (final layer in MapLayer.values)
+        layer: layer == MapLayer.hazards
+            ? visibleReports.length
+            : _infrastructure?.count(layer) ?? 0,
+    };
     final markers = <Marker>[
-      for (final school in visibleSchools)
+      for (final school in visibleSchools) _schoolMarker(school),
+      for (var index = 0; index < visibleCrossings.length; index++)
         Marker(
-          point: school.location,
-          width: 42,
-          height: 42,
+          point: visibleCrossings[index].center,
+          width: 34,
+          height: 34,
           child: Tooltip(
-            message: '${school.name} • ${school.levelLabel}',
-            child: IconButton.filledTonal(
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              tooltip: 'View ${school.name}',
-              onPressed: () => _controller.move(school.location, 16),
-              icon: const Icon(Icons.school, size: 20),
+            message: 'Mapped pedestrian crossing • OpenStreetMap',
+            child: DecoratedBox(
+              key: ValueKey('crossing-marker-$index'),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: MapLayerStyle.crossing, width: 3),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x29000000), blurRadius: 6),
+                ],
+              ),
+              child: const Icon(
+                Icons.directions_walk,
+                size: 19,
+                color: MapLayerStyle.crossing,
+              ),
             ),
           ),
         ),
-      for (final report in mappedReports)
-        Marker(
-          point: LatLng(report.latitude!, report.longitude!),
-          width: 52,
-          height: 52,
-          child: _reportMarker(report),
-        ),
+      if (_visibleLayers.contains(MapLayer.hazards))
+        for (final report in mappedReports)
+          Marker(
+            point: LatLng(report.latitude!, report.longitude!),
+            width: 52,
+            height: 52,
+            child: _reportMarker(report),
+          ),
       if (_selectedPoint case final selected?)
         Marker(
           point: selected,
           width: 50,
           height: 50,
           child: Icon(Icons.location_pin, color: colors.primary, size: 48),
+        ),
+      if (_routeOrigin case final origin?)
+        Marker(
+          point: origin,
+          width: 42,
+          height: 42,
+          child: const Tooltip(
+            message: 'Route start',
+            child: Icon(Icons.trip_origin, color: Color(0xFF6A45A5), size: 34),
+          ),
+        ),
+      if (_routeDestination case final destination?)
+        Marker(
+          point: destination,
+          width: 42,
+          height: 42,
+          child: const Tooltip(
+            message: 'Route destination',
+            child: Icon(Icons.flag, color: Color(0xFFB13C35), size: 36),
+          ),
+        ),
+      if (_userLocation case final location?)
+        Marker(
+          point: location,
+          width: 34,
+          height: 34,
+          child: const Tooltip(
+            message: 'Your approximate location',
+            child: Icon(Icons.my_location, color: Color(0xFF1769AA), size: 28),
+          ),
         ),
     ];
 
@@ -373,12 +654,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
               children: [
                 const PageIntro(
                   eyebrow: 'School & Community Support',
-                  title: 'Explore U.S. public schools',
-                  description: 'Choose a state, zoom into a community, and select a point to document a walking or biking concern.',
+                  title: 'Explore local safety infrastructure',
+                  description: 'Search for a school, inspect mapped walking and cycling infrastructure, compare routes, or select a point to report a concern.',
                   icon: Icons.travel_explore,
                   trailing: StatusPill(
-                    label: 'Urban Institute • CCD 2024',
-                    icon: Icons.school_outlined,
+                    label: 'OpenStreetMap • Overpass',
+                    icon: Icons.public,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -539,7 +820,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    'Tap anywhere to choose a report location',
+                                    'Tap anywhere to select a report or route point',
                                     style: TextStyle(
                                       color: colors.onSurfaceVariant,
                                     ),
@@ -548,14 +829,36 @@ class _ExploreScreenState extends State<ExploreScreen> {
                               ),
                             ),
                             StatusPill(
-                              label: _zoom < _schoolMarkerZoom
-                                  ? 'Zoom in to show schools'
-                                  : '${visibleSchools.length} schools in view',
+                              label: _zoom < _infrastructureZoom
+                                  ? 'Zoom in for nearby features'
+                                  : '${visibleSchools.length} nearby schools',
                               icon: Icons.school_outlined,
                               backgroundColor: colors.primaryContainer,
                               foregroundColor: colors.onPrimaryContainer,
                             ),
                           ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                        child: MapLayerControls(
+                          visibleLayers: _visibleLayers,
+                          featureCounts: featureCounts,
+                          loading: _loadingInfrastructure,
+                          zoom: _zoom,
+                          error: _infrastructureError,
+                          onRetry: _infrastructureError == null
+                              ? null
+                              : _retryInfrastructure,
+                          onLayerChanged: (layer, visible) {
+                            setState(() {
+                              if (visible) {
+                                _visibleLayers.add(layer);
+                              } else {
+                                _visibleLayers.remove(layer);
+                              }
+                            });
+                          },
                         ),
                       ),
                       Container(
@@ -636,17 +939,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       minZoom: _minZoom,
                                       maxZoom: _maxZoom,
                                       onMapReady: () {
-                                        final camera = _controller.camera;
-                                        setState(() {
-                                          _zoom = camera.zoom;
-                                          _visibleBounds = camera.visibleBounds;
-                                        });
+                                        _handleCameraChanged(
+                                          _controller.camera,
+                                        );
                                       },
                                       onPositionChanged: (camera, _) {
-                                        setState(() {
-                                          _zoom = camera.zoom;
-                                          _visibleBounds = camera.visibleBounds;
-                                        });
+                                        _handleCameraChanged(camera);
                                       },
                                       onTap: (_, location) {
                                         if (widget.enableKeyboardNavigation) {
@@ -666,7 +964,91 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         TileLayer(
                                           urlTemplate: _tileUrl,
                                           userAgentPackageName:
-                                              'org.saferoutes.cac.demo',
+                                              'org.saferoutes.cac',
+                                        ),
+                                      if (_visibleLayers.contains(
+                                        MapLayer.sidewalks,
+                                      ))
+                                        PolylineLayer(
+                                          key: const ValueKey('sidewalk-layer'),
+                                          polylines: [
+                                            for (final feature in _features(
+                                              InfrastructureType.sidewalk,
+                                            ))
+                                              Polyline(
+                                                points: feature.points,
+                                                strokeWidth: 5,
+                                                color: MapLayerStyle.sidewalk,
+                                                borderStrokeWidth: 2,
+                                                borderColor: Colors.white,
+                                              ),
+                                          ],
+                                        ),
+                                      if (_visibleLayers.contains(
+                                        MapLayer.bikePaths,
+                                      ))
+                                        PolylineLayer(
+                                          key: const ValueKey(
+                                            'bike-path-layer',
+                                          ),
+                                          polylines: [
+                                            for (final feature in _features(
+                                              InfrastructureType.bikePath,
+                                            ))
+                                              Polyline(
+                                                points: feature.points,
+                                                strokeWidth: 6,
+                                                color: MapLayerStyle.bikePath,
+                                                borderStrokeWidth: 2,
+                                                borderColor: Colors.white,
+                                              ),
+                                          ],
+                                        ),
+                                      if (_visibleLayers.contains(
+                                        MapLayer.bikeLanes,
+                                      ))
+                                        PolylineLayer(
+                                          key: const ValueKey(
+                                            'bike-lane-layer',
+                                          ),
+                                          polylines: [
+                                            for (final feature in _features(
+                                              InfrastructureType.bikeLane,
+                                            ))
+                                              Polyline(
+                                                points: feature.points,
+                                                strokeWidth: 5,
+                                                color: MapLayerStyle.bikeLane,
+                                                borderStrokeWidth: 2,
+                                                borderColor: Colors.white,
+                                                pattern: StrokePattern.dashed(
+                                                  segments: const [10, 7],
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      if (_routeAssessments.isNotEmpty)
+                                        PolylineLayer(
+                                          key: const ValueKey('route-layer'),
+                                          polylines: [
+                                            for (final assessment
+                                                in _routeAssessments)
+                                              Polyline(
+                                                points: assessment.route.points,
+                                                strokeWidth:
+                                                    _selectedRouteId ==
+                                                        assessment.route.id
+                                                    ? 7
+                                                    : 4,
+                                                color:
+                                                    assessment.route.profile ==
+                                                        RouteProfile.walking
+                                                    ? const Color(0xFF6A45A5)
+                                                    : const Color(0xFF126C9C),
+                                                borderStrokeWidth: 2,
+                                                borderColor: Colors.white,
+                                              ),
+                                          ],
                                         ),
                                       MarkerLayer(markers: markers),
                                     ],
@@ -677,7 +1059,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     child: StatusPill(
                                       label: widget.isLive
                                           ? 'PILOT DATABASE'
-                                          : 'DEMO DATA',
+                                          : 'SUPABASE NOT CONFIGURED',
                                       icon: Icons.info_outline,
                                       backgroundColor: Colors.white.withValues(
                                         alpha: .94,
@@ -716,12 +1098,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                           ),
                                           const Divider(height: 1),
                                           IconButton(
-                                            tooltip: 'Back to Schaumburg pilot school',
-                                            onPressed: () => _controller.move(
-                                              PilotSchool.location,
-                                              15,
-                                            ),
-                                            icon: const Icon(Icons.my_location),
+                                            tooltip: 'Go to my location',
+                                            onPressed: _findingLocation
+                                                ? null
+                                                : _findCurrentLocation,
+                                            icon: _findingLocation
+                                                ? const SizedBox.square(
+                                                    dimension: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                        ),
+                                                  )
+                                                : const Icon(Icons.my_location),
                                           ),
                                         ],
                                       ),
@@ -757,16 +1146,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         ),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
-                                      child: const Padding(
-                                        padding: EdgeInsets.symmetric(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
                                           horizontal: 5,
                                           vertical: 3,
                                         ),
-                                        child: Text(
-                                          '© OpenStreetMap • Schools: Urban Institute / NCES CCD',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.black87,
+                                        child: ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            maxWidth: compactLayout ? 260 : 520,
+                                          ),
+                                          child: const Text(
+                                            '© OpenStreetMap contributors • Infrastructure via Overpass API\nSchools search: Urban Institute / NCES CCD',
+                                            textAlign: TextAlign.right,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              height: 1.25,
+                                              color: Colors.black87,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -799,9 +1195,26 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     schools: visibleSchools,
                     reports: visibleReports,
                     selectedPoint: _selectedPoint,
+                    infrastructure: _infrastructure,
                   ),
                   const SizedBox(height: 18),
                 ],
+                RoutePlannerPanel(
+                  selectedPoint: _selectedPoint,
+                  origin: _routeOrigin,
+                  destination: _routeDestination,
+                  configured: _routeService.isConfigured,
+                  loading: _loadingRoutes,
+                  assessments: _routeAssessments,
+                  selectedRouteId: _selectedRouteId,
+                  error: _routeError,
+                  onUseAsOrigin: _useSelectedAsRouteOrigin,
+                  onUseAsDestination: _useSelectedAsRouteDestination,
+                  onCompare: _compareRoutes,
+                  onClear: _clearRoute,
+                  onSelectRoute: _fitRoute,
+                ),
+                const SizedBox(height: 18),
                 SectionCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -855,11 +1268,13 @@ class _MapTextAlternative extends StatelessWidget {
     required this.schools,
     required this.reports,
     required this.selectedPoint,
+    required this.infrastructure,
   });
 
-  final List<School> schools;
+  final List<OsmMapFeature> schools;
   final List<HazardReport> reports;
   final LatLng? selectedPoint;
+  final InfrastructureSnapshot? infrastructure;
 
   @override
   Widget build(BuildContext context) {
@@ -899,6 +1314,45 @@ class _MapTextAlternative extends StatelessWidget {
                 ),
               ),
             ),
+          const _TextMapHeading(
+            'OpenStreetMap infrastructure in the loaded area',
+          ),
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.linear_scale,
+              color: MapLayerStyle.sidewalk,
+            ),
+            title: const Text('Sidewalks'),
+            subtitle: Text(
+              '${infrastructure?.count(MapLayer.sidewalks) ?? 0} mapped features. Missing data means unknown, not unsafe.',
+            ),
+          ),
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.directions_walk,
+              color: MapLayerStyle.crossing,
+            ),
+            title: const Text('Crossings'),
+            subtitle: Text(
+              '${infrastructure?.count(MapLayer.crossings) ?? 0} mapped features.',
+            ),
+          ),
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.route_outlined,
+              color: MapLayerStyle.bikePath,
+            ),
+            title: const Text('Bike paths and lanes'),
+            subtitle: Text(
+              '${infrastructure?.count(MapLayer.bikePaths) ?? 0} paths and ${infrastructure?.count(MapLayer.bikeLanes) ?? 0} lanes mapped.',
+            ),
+          ),
           if (schools.isNotEmpty) ...[
             const _TextMapHeading('Schools in view'),
             for (final school in schools.take(displayLimit))
@@ -908,9 +1362,10 @@ class _MapTextAlternative extends StatelessWidget {
                 leading: const Icon(Icons.school_outlined),
                 title: Text(school.name),
                 subtitle: Text(
-                  '${school.levelLabel} • ${school.district}\n${school.address}',
+                  school.tags['operator'] ??
+                      school.tags['addr:street'] ??
+                      'OpenStreetMap feature',
                 ),
-                isThreeLine: true,
               ),
             if (schools.length > displayLimit)
               Text(
@@ -1071,7 +1526,7 @@ class _SafetyNotice extends StatelessWidget {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'The basemap is real, but reports are fictional. No pedestrian infrastructure or route safety has been verified.',
+                  'Infrastructure comes from OpenStreetMap and may be incomplete or outdated; missing features are unknown, not unsafe. Community reports retain their displayed review status. Route scores are a transparent comparison aid, not a safety guarantee.',
                   style: TextStyle(color: Color(0xFF795E25), height: 1.4),
                 ),
               ],

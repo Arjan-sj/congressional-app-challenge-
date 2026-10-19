@@ -17,7 +17,7 @@ void main() {
 
     expect(find.text('SafeRoutes'), findsOneWidget);
     expect(find.text('SCHOOL & COMMUNITY SUPPORT'), findsOneWidget);
-    expect(find.text('Explore U.S. public schools'), findsOneWidget);
+    expect(find.text('Explore local safety infrastructure'), findsOneWidget);
     expect(find.text('Search schools and communities'), findsOneWidget);
     expect(find.text('Map information in text'), findsNothing);
     expect(find.byTooltip('Accessibility settings'), findsOneWidget);
@@ -25,6 +25,16 @@ void main() {
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.remove), findsOneWidget);
     expect(find.byIcon(Icons.my_location), findsOneWidget);
+    expect(find.text('Map key'), findsOneWidget);
+    expect(find.textContaining('Schools ('), findsOneWidget);
+    expect(find.textContaining('Sidewalks ('), findsOneWidget);
+    expect(find.textContaining('Crossings ('), findsOneWidget);
+    expect(find.textContaining('Bike paths ('), findsOneWidget);
+    expect(find.textContaining('Bike lanes ('), findsOneWidget);
+    expect(find.textContaining('Hazards ('), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidewalk-layer')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bike-path-layer')), findsOneWidget);
+    expect(find.byKey(const ValueKey('layer-crossings')), findsOneWidget);
   });
 
   testWidgets('Explore remains usable on mobile with enlarged text', (
@@ -106,7 +116,7 @@ void main() {
     expect(find.text('Map information in text'), findsOneWidget);
   });
 
-  testWidgets('Reports tab shows fictional examples', (tester) async {
+  testWidgets('Reports tab has no fabricated hazard data', (tester) async {
     await tester.pumpWidget(
       const SafeRoutesApp(
         enableMapTiles: false,
@@ -123,7 +133,8 @@ void main() {
 
     expect(find.text('Prioritize community concerns'), findsOneWidget);
     expect(find.text('How the 100-point score is calculated'), findsOneWidget);
-    expect(find.text('Missing sidewalk'), findsWidgets);
+    expect(find.text('Connect Supabase to load reports'), findsNWidgets(2));
+    expect(find.text('Missing sidewalk'), findsNothing);
   });
 
   testWidgets('Map tap is retained when switching straight to Report tab', (
@@ -154,7 +165,7 @@ void main() {
     expect(find.text('Select a point on the map first'), findsNothing);
   });
 
-  testWidgets('Demo submission requires a selected map location', (
+  testWidgets('Report submission requires a selected map location', (
     tester,
   ) async {
     await tester.pumpWidget(

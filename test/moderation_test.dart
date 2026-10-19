@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:congressional_app/app.dart';
 import 'package:congressional_app/models/hazard_report.dart';
 import 'package:congressional_app/models/report_moderation.dart';
 import 'package:congressional_app/screens/report_review_dialog.dart';
@@ -191,44 +190,6 @@ void main() {
     expect(calls, 1);
     pending.complete();
     await tester.pumpAndSettle();
-  });
-
-  testWidgets('demo flags move through review and retain decision history', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      const SafeRoutesApp(
-        enableMapTiles: false,
-        persistAccessibilityPreferences: false,
-      ),
-    );
-    await tester.tap(find.text('Moderation'));
-    await tester.pumpAndSettle();
-    await tapVisible(tester, 'Review report');
-    await tester.enterText(
-      find.byType(TextFormField),
-      'Example description needs checking.',
-    );
-    await tapVisible(tester, 'Flag inaccurate');
-    await tapVisible(tester, 'Flagged');
-    expect(find.text('Accuracy flagged'), findsOneWidget);
-    await tapVisible(tester, 'Review report');
-    await tester.enterText(
-      find.byType(TextFormField),
-      'Example information checked and corrected.',
-    );
-    await tapVisible(tester, 'Verify');
-    expect(find.text('No reports in this queue.'), findsOneWidget);
-    await tapVisible(tester, 'Verified');
-    await tapVisible(tester, 'Review report');
-    expect(find.text('Unverified → Verified'), findsOneWidget);
-    expect(
-      find.text('Example information checked and corrected.'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Moderator: Demo moderator'), findsOneWidget);
-    expect(find.textContaining('Reviewed ·'), findsOneWidget);
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('review remains usable on mobile with larger text', (

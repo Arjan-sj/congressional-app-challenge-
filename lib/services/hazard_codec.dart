@@ -57,7 +57,7 @@ class HazardCodec {
       'latitude': report.latitude!,
       'longitude': report.longitude!,
       'reporter_id': reporterId,
-      'is_demo': true,
+      'is_demo': report.isDemo,
     };
   }
 }

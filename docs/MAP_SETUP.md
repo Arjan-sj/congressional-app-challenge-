@@ -1,64 +1,64 @@
-# SafeRoutes interactive map — Mac and Linux
+# SafeRoutes interactive map
 
-## What is implemented
+## Implemented data sources
 
-- A **real OpenStreetMap basemap** in Flutter using `flutter_map`.
-- Pilot focus: **Schaumburg High School**, 1100 W Schaumburg Rd, Schaumburg, IL.
-- A school marker using approximate published campus coordinates; **not** a verified pedestrian entrance.
-- Click/tap the map to select a location, then select **Report this location (demo)**.
-- The report form uses the selected latitude/longitude; the newly created **fictional report** appears on the map as a marker and in the Reports tab.
-- A marker opens its issue type, severity, and **unverified** status.
-- Filter visible markers by category and recenter the map.
+- `flutter_map` with OpenStreetMap-compatible raster tiles for pan/zoom.
+- Overpass API viewport queries for schools, mapped sidewalks, pedestrian crossings, bike paths, and bike lanes.
+- Supabase `hazard_reports` for RLS-filtered community reports and authenticated inserts.
+- OpenRouteService walking and cycling alternatives with GeoJSON geometry.
+- Optional device-location recentering on web, Android, and iOS.
 
-**Not yet implemented:** real school search, sidewalk data validation, walk/bike route comparisons, backend storage, official reporting, verification, or geocoding. App state is **memory-only** and resets on restart.
+The app does not include fabricated map features or seeded hazard pins. The initial camera remains centered on the pilot community, but nearby features come from live APIs.
 
-## How to run in IntelliJ IDEA (Mac)
+## Configuration
 
-1. Open the repo's **root folder** in IntelliJ, not `android/`.
-2. Choose the `feature/interactive-school-map` branch. This branch builds on the still-open `setup/saferoutes-flutter-foundation` branch.
-3. Open Terminal:
+Pass public client configuration at build/run time. Never use a Supabase secret or `service_role` key in Flutter.
 
 ```bash
-git fetch origin
-git switch feature/interactive-school-map
+flutter run -d chrome --web-port 7357 \
+  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY \
+  --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
+```
+
+Optional endpoints:
+
+```bash
+--dart-define=MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
+--dart-define=OVERPASS_URL=https://overpass-api.de/api/interpreter
+```
+
+Client-side keys are visible in web/mobile builds. Restrict provider keys where supported and use a server-side proxy before high-volume production use.
+
+## Infrastructure loading
+
+The map waits 850 ms after movement, queries only at zoom 14 or closer, expands the viewport slightly, reuses ten-minute in-memory cache entries, and ignores stale responses. This reduces repeated Overpass calls while panning. HTTP 429, timeouts, server failures, and empty results are shown without disabling the basemap, hazards, or other controls.
+
+OpenStreetMap sidewalk and cycleway tagging varies by community. A missing line means **unknown**, not absent or unsafe. Road centerlines carrying `sidewalk=*` or `cycleway=*` indicate mapped tagging; they are not surveyed curb-level geometry.
+
+## Route scores
+
+OpenRouteService is queried for `foot-walking` and `cycling-regular` alternatives. Each route begins at 80 points:
+
+- subtract up to 15 points for extra distance compared with the shortest route of the same mode;
+- subtract `severity × 4` for each verified, unresolved hazard within 50 m, capped at 40 points;
+- add up to 20 points for route samples close to mapped mode-appropriate infrastructure.
+
+Unverified, rejected, and resolved reports do not reduce a route score. Missing or partially loaded infrastructure receives no penalty and is called out as unknown. Scores are transparent comparisons, not collision-risk models or promises of safety.
+
+## Map/provider responsibilities
+
+- Retain visible OpenStreetMap attribution and follow the tile provider's usage policy.
+- The public Overpass instance is appropriate for a low-volume pilot, not a high-volume production backend. Cache, debounce, and consider a hosted/self-managed instance at scale.
+- OpenRouteService API restrictions and quotas apply. Production deployments should restrict keys or proxy calls.
+- Android requests coarse/fine foreground location; iOS contains a when-in-use purpose string. Location is requested only after the user taps the location control and is not persisted.
+
+## Verification
+
+```bash
 flutter pub get
-flutter analyze
+dart analyze lib test
 flutter test
-flutter run -d chrome
 ```
 
-These same terminal commands work on Linux in VS Code after Flutter, Dart, Git and Chrome are installed.
-
-## Try the whole map/report flow
-
-1. Open Explore. You should see street tiles and a school icon.
-2. Zoom and pan. Press the recenter icon to return to the pilot school.
-3. Tap a nearby location. A purple selection pin and coordinate card should appear.
-4. Click **Report this location (demo)**.
-5. Enter a fictional issue description (5+ characters); click **Save demo report locally**.
-6. You should return to Explore and see an orange report marker. Tap it for details.
-7. Tap Reports and find the new entry. Reload the page: the new report should disappear, because Supabase has not been connected.
-
-**Do not submit a real student's path, home address, or personal details.**
-
-## Map tile source and production setup
-
-For low-volume development, this uses the standard `https://tile.openstreetmap.org/{z}/{x}/{y}.png` tile endpoint, with visible `© OpenStreetMap contributors` attribution and an identifying user agent where supported. It is **not a production tile hosting contract**. Follow the [OSMF tile policy](https://operations.osmfoundation.org/policies/tiles/): no bulk/preloading, maintain browser referrer, respect caching, and do not overburden their servers.
-
-**Before publishing or heavy use, choose a production tile provider** (e.g. MapTiler) and check its pricing/terms. The map accepts a configurable `MAP_TILE_URL` (must be a valid XYZ PNG tile URL with any required provider public key, and retain all required provider attribution). Example for your chosen provider:
-
-```bash
-flutter run -d chrome --dart-define='MAP_TILE_URL=https://YOUR_TILE_HOST/{z}/{x}/{y}.png?key=YOUR_PUBLIC_KEY'
-```
-
-Do not paste privileged secrets into map URLs. Tile URLs and public browser keys are visible to users. MapTiler or another provider may require additional branding/attribution: update the UI before deploying.
-
-## Important technical details
-
-- Flutter map coordinates use `LatLng(latitude, longitude)`.
-- GeoJSON coordinates use `[longitude, latitude]`. Never reverse them.
-- School map point is approximate and comes from public school directory coordinates:
-  [Schaumburg High School directory](https://www.usacitymap.com/schaumburg-high-school-173045003167-school-detail.html).
-- Sample issues should NEVER be described as verified safety hazards.
-- No sidewalk/path dataset is loaded yet; a basemap's road lines are **not** a verified walkable route graph.
-- In widget tests, `SafeRoutesApp(enableMapTiles: false)` avoids network requests; the actual map layers and markers still render.
+Widget tests use `SafeRoutesApp(enableMapTiles: false)` so no map, Overpass, or location network/permission work occurs.

@@ -1,5 +1,4 @@
-/// Shared UI model for the *demo*. Before adding Supabase, agree on the
-/// production database fields in docs/INTEGRATION_CONTRACT.md.
+/// Shared UI model matching the Supabase hazard_reports table.
 enum HazardType {
   missingSidewalk('Missing sidewalk'),
   difficultCrossing('Difficult crossing'),
@@ -32,7 +31,7 @@ class HazardReport {
     this.reporterId,
     this.latitude,
     this.longitude,
-    this.isDemo = true,
+    this.isDemo = false,
   }) : assert(severity >= 1 && severity <= 5);
 
   final String id;
@@ -48,7 +47,7 @@ class HazardReport {
   final double? latitude;
   final double? longitude;
 
-  /// All current entries are fictional samples and never verified findings.
+  /// Reserved for explicitly labelled fixtures imported from test data.
   final bool isDemo;
 
   bool get hasLocation => latitude != null && longitude != null;

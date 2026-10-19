@@ -10,13 +10,11 @@ class ModerationScreen extends StatefulWidget {
     required this.reports,
     required this.flags,
     required this.onReview,
-    this.isDemo = false,
   });
 
   final List<HazardReport> reports;
   final List<ReportFlag> flags;
   final ValueChanged<HazardReport> onReview;
-  final bool isDemo;
 
   @override
   State<ModerationScreen> createState() => _ModerationScreenState();
@@ -56,12 +54,10 @@ class _ModerationScreenState extends State<ModerationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                PageIntro(
+                const PageIntro(
                   eyebrow: 'Moderation',
                   title: 'Review community reports',
-                  description: widget.isDemo
-                      ? 'Demo workspace. Decisions and flags are saved in memory only; examples remain fictional.'
-                      : 'Review submissions and accuracy flags. Record a reason for every decision.',
+                  description: 'Review submissions and accuracy flags. Record a reason for every decision.',
                   icon: Icons.fact_check_outlined,
                 ),
                 const SizedBox(height: 24),

@@ -12,13 +12,18 @@ class SupabaseHazardRepository {
       'id,school_id,type,severity,description,status,latitude,longitude,'
       'is_demo,created_at,reporter_id';
 
-  Future<List<HazardReport>> fetchHazards(String schoolId) async {
+  Future<List<HazardReport>> fetchHazards({String? schoolId}) async {
     // RLS returns reviewed/own reports, or the full queue for moderators.
-    final rows = await client
+    final query = client
         .from('hazard_reports')
         .select(fields)
-        .eq('school_id', schoolId)
-        .order('created_at', ascending: false);
+        .eq('is_demo', false);
+    final rows = schoolId == null
+        ? await query.order('created_at', ascending: false).limit(1000)
+        : await query
+              .eq('school_id', schoolId)
+              .order('created_at', ascending: false)
+              .limit(1000);
     return rows.map(HazardCodec.fromRow).toList();
   }
 

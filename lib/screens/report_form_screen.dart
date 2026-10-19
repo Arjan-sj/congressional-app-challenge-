@@ -12,6 +12,7 @@ class ReportFormScreen extends StatefulWidget {
     this.selectedLatitude,
     this.selectedLongitude,
     this.isLive = false,
+    this.submissionEnabled = true,
   });
 
   final Future<void> Function(HazardReport) onSubmit;
@@ -19,6 +20,7 @@ class ReportFormScreen extends StatefulWidget {
   final double? selectedLatitude;
   final double? selectedLongitude;
   final bool isLive;
+  final bool submissionEnabled;
 
   @override
   State<ReportFormScreen> createState() => _ReportFormScreenState();
@@ -61,6 +63,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
           createdAt: DateTime.now(),
           latitude: widget.selectedLatitude,
           longitude: widget.selectedLongitude,
+          isDemo: false,
         ),
       );
 
@@ -73,9 +76,8 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save: $error')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not save: $error')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -101,8 +103,8 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                       children: [
                         const PageIntro(
                           eyebrow: 'Share an observation',
-                          title: 'Create a demo report',
-                          description: 'Document a fictional walking or biking concern in three quick steps.',
+                          title: 'Report a walking or biking concern',
+                          description: 'Choose a location, describe what you observed, and submit it for review.',
                           icon: Icons.add_location_alt_outlined,
                         ),
                         const SizedBox(height: 22),
@@ -123,8 +125,8 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                               Expanded(
                                 child: Text(
                                   widget.isLive
-                                      ? 'Pilot database mode. Sign in first; example reports are saved as unverified. Do not submit real student routes.'
-                                      : 'For testing only. Reports are fictional and are not sent to officials or saved to a database.',
+                                      ? 'Reports are saved as unverified until a moderator reviews them. Never include student names, home addresses, or recurring travel details.'
+                                      : 'Supabase is not configured, so report submission is unavailable. The map and route tools remain usable.',
                                   style: const TextStyle(
                                     color: Color(0xFF604300),
                                     height: 1.4,
@@ -259,7 +261,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                                 maxLines: 4,
                                 maxLength: 250,
                                 decoration: const InputDecoration(
-                                  labelText: 'Describe a fictional issue',
+                                  labelText: 'Describe the concern',
                                   alignLabelWithHint: true,
                                   prefixIcon: Padding(
                                     padding: EdgeInsets.only(bottom: 70),
@@ -366,7 +368,20 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                 constraints: const BoxConstraints(maxWidth: 780),
                 child: Row(
                   children: [
-                    if (!_hasLocation) ...[
+                    if (!widget.submissionEnabled) ...[
+                      Icon(
+                        Icons.cloud_off_outlined,
+                        size: 18,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Configure Supabase to enable submissions.',
+                          style: TextStyle(color: colors.onSurfaceVariant),
+                        ),
+                      ),
+                    ] else if (!_hasLocation) ...[
                       Icon(
                         Icons.info_outline,
                         size: 18,
@@ -382,13 +397,18 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                     ] else
                       const Spacer(),
                     FilledButton.icon(
-                      onPressed: _hasLocation && !_saving ? _save : null,
+                      onPressed:
+                          widget.submissionEnabled && _hasLocation && !_saving
+                          ? _save
+                          : null,
                       icon: const Icon(Icons.save_outlined),
-                      label: Text(_saving
-                          ? 'Saving...'
-                          : widget.isLive
-                              ? 'Save example to Supabase'
-                              : 'Save demo report locally'),
+                      label: Text(
+                        _saving
+                            ? 'Saving...'
+                            : widget.isLive
+                            ? 'Submit unverified report'
+                            : 'Supabase not configured',
+                      ),
                     ),
                   ],
                 ),

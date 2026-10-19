@@ -26,10 +26,13 @@ If the setup branch is already merged, use `git switch main && git pull` instead
 flutter doctor
 flutter devices
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --web-port 7357 \
+  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY \
+  --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
 ```
 
-You should see **SafeRoutes**, with Explore / Reports / Report tabs. All reports are fictional; they are saved only until the app restarts.
+You should see **SafeRoutes**, with Explore / Reports / Report tabs. Without Supabase values the map still works, but report loading and submission are disabled.
 
 ```bash
 flutter analyze

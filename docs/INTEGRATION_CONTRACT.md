@@ -36,7 +36,7 @@ For production JSON, use `snake_case` column names such as `school_id`, `created
 - Uploads, if eventually enabled, need review and metadata stripping.
 - Reports are observations, NOT certified hazards; ranking is prioritization for review, NOT crash-risk probability.
 - If sidewalk/crossing source data is incomplete, say so rather than routing over unknown geometry.
-- All current screen data is **fictional** and must be labeled as such.
+- Test fixtures must remain isolated from the running map. Live entries retain their server-provided verification status.
 
 ## 4. MVP acceptance tests
 

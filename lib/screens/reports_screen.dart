@@ -494,7 +494,9 @@ class _EmptyReports extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            isLive ? 'No visible reports yet' : 'No demo reports yet',
+            isLive
+                ? 'No visible reports yet'
+                : 'Connect Supabase to load reports',
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ],

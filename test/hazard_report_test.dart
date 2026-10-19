@@ -14,6 +14,6 @@ void main() {
 
     expect(report.status, ReportStatus.unverified);
     expect(report.hasLocation, isFalse);
-    expect(report.isDemo, isTrue);
+    expect(report.isDemo, isFalse);
   });
 }

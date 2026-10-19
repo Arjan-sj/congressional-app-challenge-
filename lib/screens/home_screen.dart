@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../data/demo_reports.dart';
 import '../data/pilot_school.dart';
 import '../models/accessibility_preferences.dart';
 import '../models/hazard_report.dart';
@@ -45,7 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = false;
   String? _loadError;
   List<ReportFlag> _flags = [];
-  final _demoHistory = <ModerationEvent>[];
   bool _canModerate = false;
   int _refreshVersion = 0;
   String? _loadedUserId;
@@ -56,8 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _reports = _live ? [] : buildDemoReports();
-    _canModerate = !_live;
+    _reports = [];
+    _canModerate = false;
     if (widget.liveClient case final client?) {
       _authSubscription = client.auth.onAuthStateChange.listen((_) {
         unawaited(_refreshReports());
@@ -95,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final repository = SupabaseHazardRepository(client);
-      final loaded = await repository.fetchHazards(PilotSchool.id);
+      final loaded = await repository.fetchHazards();
       final canModerate = await repository.canModerate();
       final flags = await repository.fetchFlags(PilotSchool.id);
       if (mounted && version == _refreshVersion) {
@@ -125,12 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _reviewReport(HazardReport report) async {
     final client = widget.liveClient;
-    final actorId =
-        client?.auth.currentUser?.id ?? (_live ? null : 'demo-user');
+    if (client == null) return;
+    final actorId = client.auth.currentUser?.id;
     final canViewHistory =
-        !_live ||
-        _canModerate ||
-        report.reporterId == actorId && actorId != null;
+        _canModerate || report.reporterId == actorId && actorId != null;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -140,20 +136,11 @@ class _HomeScreenState extends State<HomeScreen> {
           report: report,
           canViewHistory: canViewHistory,
           loadData: () async {
-            final flags = client == null
-                ? _flags
-                : await SupabaseHazardRepository(client)
-                      .fetchFlags(report.schoolId);
+            final repository = SupabaseHazardRepository(client);
+            final flags = await repository.fetchFlags(report.schoolId);
             return ReportReviewData(
               flags: flags.where((f) => f.reportId == report.id).toList(),
-              history: client == null
-                  ? _demoHistory
-                        .where((e) => e.reportId == report.id)
-                        .toList()
-                        .reversed
-                        .toList()
-                  : await SupabaseHazardRepository(client)
-                        .fetchHistory(report.id),
+              history: await repository.fetchHistory(report.id),
             );
           },
           onFlag:
@@ -181,13 +168,12 @@ class _HomeScreenState extends State<HomeScreen> {
       throw StateError('You have already flagged this report.');
     }
     final client = widget.liveClient;
-    if (client != null) {
-      if (client.auth.currentUser?.id != actorId) {
-        throw StateError('Your account changed. Reopen this report.');
-      }
-      await SupabaseHazardRepository(client).flagReport(report, reason);
+    if (client == null) return;
+    if (client.auth.currentUser?.id != actorId) {
+      throw StateError('Your account changed. Reopen this report.');
     }
-    if (!mounted || client != null && client.auth.currentUser?.id != actorId) {
+    await SupabaseHazardRepository(client).flagReport(report, reason);
+    if (!mounted || client.auth.currentUser?.id != actorId) {
       return;
     }
     setState(() {
@@ -205,13 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          _live
-              ? 'Accuracy flag submitted for moderator review.'
-              : 'Demo flag saved in memory.',
-        ),
-      ),
+      SnackBar(content: Text('Accuracy flag submitted for moderator review.')),
     );
   }
 
@@ -222,14 +202,13 @@ class _HomeScreenState extends State<HomeScreen> {
     String actorId,
   ) async {
     final client = widget.liveClient;
-    if (client != null && client.auth.currentUser?.id != actorId) {
+    if (client == null) return;
+    if (client.auth.currentUser?.id != actorId) {
       throw StateError('Your account changed. Reopen this report.');
     }
-    final saved = client == null
-        ? report.withStatus(status)
-        : await SupabaseHazardRepository(client)
-              .moderateReport(report, status, reason);
-    if (!mounted || client != null && client.auth.currentUser?.id != actorId) {
+    final saved = await SupabaseHazardRepository(client)
+        .moderateReport(report, status, reason);
+    if (!mounted || client.auth.currentUser?.id != actorId) {
       return;
     }
     final now = DateTime.now();
@@ -241,23 +220,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _flags = _flags
           .map((f) => f.reportId == saved.id ? f.reviewed(now) : f)
           .toList();
-      if (client == null) {
-        _demoHistory.add(
-          ModerationEvent(
-            reportId: report.id,
-            actorId: 'Demo moderator',
-            previousStatus: report.status,
-            status: status,
-            reason: reason,
-            createdAt: now,
-          ),
-        );
-      }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${_live ? 'Report' : 'Demo report'} ${status.label.toLowerCase()}. Decision recorded.',
+          'Report ${status.label.toLowerCase()}. Decision recorded.',
         ),
       ),
     );
@@ -283,16 +250,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveReport(HazardReport report) async {
     final client = widget.liveClient;
     if (client == null) {
-      setState(() {
-        _reports.insert(0, report);
-        _selectedLatitude = null;
-        _selectedLongitude = null;
-        _selectedIndex = 0;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Demo saved in memory, not online.')),
+      throw StateError(
+        'Supabase is not configured. Start with SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.',
       );
-      return;
     }
     final saved = await SupabaseHazardRepository(client).submitHazard(report);
     if (!mounted) return;
@@ -351,13 +311,13 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedLatitude: _selectedLatitude,
         selectedLongitude: _selectedLongitude,
         isLive: _live,
+        submissionEnabled: _live,
       ),
       if (_canModerate)
         ModerationScreen(
           reports: _reports,
           flags: _flags,
           onReview: _reviewReport,
-          isDemo: !_live,
         ),
     ];
 
