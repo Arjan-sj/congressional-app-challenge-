@@ -162,6 +162,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _infrastructureDebounce?.cancel();
     if (!widget.enableMapTiles || zoom < _infrastructureZoom) {
       if (_loadingInfrastructure || _infrastructureError != null) {
+        _infrastructureRequestVersion++;
         setState(() {
           _loadingInfrastructure = false;
           _infrastructureError = null;
@@ -191,6 +192,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final snapshot = await _overpassService.fetch(
         bounds,
         forceRefresh: forceRefresh,
+        onProgress: (partialSnapshot, _, _) {
+          if (!mounted || requestVersion != _infrastructureRequestVersion) {
+            return;
+          }
+          setState(() => _infrastructure = partialSnapshot);
+        },
       );
       if (!mounted || requestVersion != _infrastructureRequestVersion) return;
       setState(() {

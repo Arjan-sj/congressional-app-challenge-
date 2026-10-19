@@ -25,14 +25,14 @@ Optional endpoints:
 
 ```bash
 --dart-define=MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
---dart-define=OVERPASS_URL=https://overpass-api.de/api/interpreter
+--dart-define=OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api/interpreter
 ```
 
 Client-side keys are visible in web/mobile builds. Restrict provider keys where supported and use a server-side proxy before high-volume production use.
 
 ## Infrastructure loading
 
-The map waits 850 ms after movement, queries only at zoom 14 or closer, expands the viewport slightly, reuses ten-minute in-memory cache entries, and ignores stale responses. This reduces repeated Overpass calls while panning. HTTP 429, timeouts, server failures, and empty results are shown without disabling the basemap, hazards, or other controls.
+The map waits 850 ms after movement, queries only at zoom 14 or closer, expands the viewport slightly, and loads it as four bounded chunks with at most two requests in flight. Completed chunks appear immediately, ten-minute cache entries are reused, stale responses are ignored, and connection or server failures automatically try the fallback endpoint. HTTP 429, total outages, and empty results are shown without disabling the basemap, hazards, or other controls.
 
 OpenStreetMap sidewalk and cycleway tagging varies by community. A missing line means **unknown**, not absent or unsafe. Road centerlines carrying `sidewalk=*` or `cycleway=*` indicate mapped tagging; they are not surveyed curb-level geometry.
 
