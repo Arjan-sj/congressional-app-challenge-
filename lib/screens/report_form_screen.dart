@@ -45,6 +45,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   IconData _iconFor(HazardType type) => switch (type) {
     HazardType.missingSidewalk => Icons.directions_walk,
     HazardType.difficultCrossing => Icons.add_road,
+    HazardType.poorLighting => Icons.lightbulb_outline,
     HazardType.blockedPath => Icons.block,
     HazardType.bikeRoute => Icons.pedal_bike,
   };

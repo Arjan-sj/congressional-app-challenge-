@@ -4,6 +4,11 @@ A Flutter prototype for documenting school walking and biking concerns. Built fo
 
 > **Current stage: Pilot prototype.** The Flutter app includes live OpenStreetMap infrastructure from Overpass, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
 
+The separate Analytics workspace adds RLS-aware overview metrics, trends,
+interactive hazard heatmaps, school/category comparisons, Realtime refresh,
+and privacy-safe CSV, XLSX, PDF, JSON, and GeoJSON exports. See
+[Analytics architecture and verification](docs/ANALYTICS.md).
+
 ## Run locally (macOS or Linux)
 
 Install [Flutter](https://docs.flutter.dev/get-started/install), Git, and Google Chrome first. Then:

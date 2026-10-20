@@ -9,6 +9,7 @@ import '../models/hazard_report.dart';
 import '../models/report_moderation.dart';
 import '../services/supabase_hazard_repository.dart';
 import 'accessibility_settings_dialog.dart';
+import 'analytics_screen.dart';
 import 'auth_dialog.dart';
 import 'explore_screen.dart';
 import 'report_form_screen.dart';
@@ -85,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _reports = [];
       _flags = [];
       _canModerate = false;
-      if (_selectedIndex == 3) _selectedIndex = 1;
+      if (_selectedIndex == 4) _selectedIndex = 1;
     }
     setState(() {
       _loading = true;
@@ -101,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _reports = loaded;
           _flags = flags;
           _canModerate = canModerate;
-          if (!canModerate && _selectedIndex == 3) _selectedIndex = 1;
+          if (!canModerate && _selectedIndex == 4) _selectedIndex = 1;
         });
       }
     } catch (error) {
@@ -111,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _reports = [];
           _flags = [];
           _canModerate = false;
-          if (_selectedIndex == 3) _selectedIndex = 1;
+          if (_selectedIndex == 4) _selectedIndex = 1;
         });
       }
     } finally {
@@ -243,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _selectedLatitude = latitude;
       _selectedLongitude = longitude;
-      _selectedIndex = 2;
+      _selectedIndex = 3;
     });
   }
 
@@ -305,6 +306,11 @@ class _HomeScreenState extends State<HomeScreen> {
             widget.accessibilityPreferences.keyboardMapNavigation,
       ),
       ReportsScreen(reports: _reports, isLive: _live, onReview: _reviewReport),
+      AnalyticsScreen(
+        client: widget.liveClient,
+        isActive: _selectedIndex == 2,
+        enableMapTiles: widget.enableMapTiles,
+      ),
       ReportFormScreen(
         onSubmit: _saveReport,
         onChooseLocation: () => setState(() => _selectedIndex = 0),
@@ -331,6 +337,11 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: Icon(Icons.list_alt_outlined),
         selectedIcon: Icon(Icons.list_alt),
         label: 'Reports',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.analytics_outlined),
+        selectedIcon: Icon(Icons.analytics),
+        label: 'Analytics',
       ),
       const NavigationDestination(
         icon: Icon(Icons.add_circle_outline),

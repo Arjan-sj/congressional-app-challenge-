@@ -8,6 +8,7 @@ class HazardCodec {
   static const types = {
     HazardType.missingSidewalk: 'missing_sidewalk',
     HazardType.difficultCrossing: 'difficult_crossing',
+    HazardType.poorLighting: 'poor_lighting',
     HazardType.blockedPath: 'blocked_path',
     HazardType.bikeRoute: 'bike_route',
   };

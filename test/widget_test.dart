@@ -137,6 +137,27 @@ void main() {
     expect(find.text('Missing sidewalk'), findsNothing);
   });
 
+  testWidgets('Analytics is a separate tab and never fabricates data', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const SafeRoutesApp(
+        enableMapTiles: false,
+        persistAccessibilityPreferences: false,
+      ),
+    );
+    await tester.tap(find.byIcon(Icons.analytics_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hazard analytics'), findsOneWidget);
+    expect(
+      find.text(
+        'Supabase is not configured. Analytics never substitutes placeholder data.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Map tap is retained when switching straight to Report tab', (
     tester,
   ) async {

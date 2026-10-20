@@ -1,9 +1,10 @@
 /// Shared UI model matching the Supabase hazard_reports table.
 enum HazardType {
   missingSidewalk('Missing sidewalk'),
-  difficultCrossing('Difficult crossing'),
+  difficultCrossing('Dangerous crossing'),
+  poorLighting('Poor lighting'),
   blockedPath('Blocked path'),
-  bikeRoute('Bicycle-route concern');
+  bikeRoute('Bike infrastructure');
 
   const HazardType(this.label);
   final String label;
