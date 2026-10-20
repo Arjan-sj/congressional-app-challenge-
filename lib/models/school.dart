@@ -21,8 +21,12 @@ class School {
     required this.latitude,
     required this.longitude,
     required this.levels,
+    this.classification = 'public',
+    this.sourceYear,
   });
 
+  final String classification;
+  final String? sourceYear;
   final String id;
   final String name;
   final String district;

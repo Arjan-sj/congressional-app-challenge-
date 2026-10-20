@@ -1,0 +1,2 @@
+[functions.map-infrastructure]
+verify_jwt = false

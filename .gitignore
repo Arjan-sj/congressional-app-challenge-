@@ -28,3 +28,6 @@ Thumbs.db
 # Never commit generated private files or screenshots containing user data
 private/
 secrets/
+__pycache__/
+*.pyc
+supabase/.temp/

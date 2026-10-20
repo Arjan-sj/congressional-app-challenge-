@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -15,14 +17,18 @@ import '../models/safety_route.dart';
 import '../models/school.dart';
 import '../services/device_location_service.dart';
 import '../services/hazard_avoidance_service.dart';
+import '../services/hazard_codec.dart';
+import '../services/supabase_hazard_repository.dart';
 import '../services/open_route_service.dart';
-import '../services/overpass_service.dart';
+import '../services/map_data_service.dart';
+import '../services/map_marker_index.dart';
 import '../services/route_safety_scorer.dart';
 import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/hazard_photo_view.dart';
 import '../widgets/map_layer_controls.dart';
 import '../widgets/route_planner_panel.dart';
+import '../widgets/school_cluster_panel.dart';
 
 /// Displays a real interactive basemap with live infrastructure and reports.
 class ExploreScreen extends StatefulWidget {
@@ -33,6 +39,7 @@ class ExploreScreen extends StatefulWidget {
     required this.onSelectLocation,
     this.enableMapTiles = true,
     this.isLive = false,
+    this.liveClient,
     this.showMapTextAlternative = false,
     this.enableKeyboardNavigation = false,
   });
@@ -42,6 +49,7 @@ class ExploreScreen extends StatefulWidget {
   final void Function(double latitude, double longitude) onSelectLocation;
   final bool enableMapTiles;
   final bool isLive;
+  final SupabaseClient? liveClient;
   final bool showMapTextAlternative;
   final bool enableKeyboardNavigation;
 
@@ -52,20 +60,31 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   static const _minZoom = 4.0;
   static const _maxZoom = 19.0;
-  static const _infrastructureZoom = 14.0;
+  static const _infrastructureZoom = 15.0;
   static const String _tileUrl = String.fromEnvironment(
     'MAP_TILE_URL',
     defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   );
 
   final MapController _controller = MapController();
-  final OverpassService _overpassService = OverpassService();
+  MapDataService? _mapData;
+  StreamSubscription<AuthState>? _mapAuth;
+  Timer? _hazardRefresh;
+  Timer? _searchDebounce;
+  Timer? _cameraDebounce;
+  int _searchVersion = 0;
+  List<School> _searchMatches = [];
+  String? _selectedSchoolId;
+  String? _hazardError;
+  String? _tileError;
+  int _tileGeneration = 0;
+  bool _diagnostics = false;
   final OpenRouteService _routeService = OpenRouteService();
   final HazardAvoidanceService _hazardAvoidanceService =
       const HazardAvoidanceService();
   final DeviceLocationService _locationService = const DeviceLocationService();
   final RouteSafetyScorer _routeScorer = const RouteSafetyScorer();
-  UrbanSchoolsRepository? _schoolsRepository;
+
   final TextEditingController _schoolSearchController = TextEditingController();
   final FocusNode _mapFocusNode = FocusNode(debugLabel: 'Community map');
   LatLng? _selectedPoint;
@@ -79,9 +98,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<LatLng> _routeAvoidLocations = const [];
   final Set<MapLayer> _visibleLayers = MapLayer.values.toSet();
   LatLngBounds? _visibleBounds;
-  Timer? _infrastructureDebounce;
+
   int _selectedStateFips = 17;
-  int _infrastructureRequestVersion = 0;
+
   int _routeRequestVersion = 0;
   double _zoom = 15;
   bool _loadingSchools = false;
@@ -97,25 +116,128 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.enableMapTiles) {
-      _schoolsRepository = UrbanSchoolsRepository();
-      _loadSchools();
+    if (widget.enableMapTiles && widget.liveClient != null) {
+      final data = _mapData = MapDataService.supabase(widget.liveClient!);
+      data.schools.addListener(_schoolDataChanged);
+      data.hazards.addListener(_hazardDataChanged);
+      data.infrastructure.addListener(_infrastructureDataChanged);
+      _mapAuth = widget.liveClient!.auth.onAuthStateChange.listen((_) {
+        data.invalidateHazards(clear: true);
+      });
+      _hazardRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_visibleBounds != null) _scheduleViewport();
+      });
     }
   }
 
-  List<HazardReport> get _mappedReports => widget.reports
+  List<HazardReport> _routeReports = [];
+  List<HazardReport> get _allMapReports {
+    final data = _mapData;
+    if (data == null || !data.hazards.hasData) return widget.reports;
+    return [
+      for (final report in data.detailedHazards)
+        if (widget.reports
+                .where((r) => r.id == report.id && r.hasPhoto)
+                .firstOrNull
+            case final photo?)
+          report.withPhoto(
+            path: photo.photoPath,
+            signedUrl: photo.photoSignedUrl,
+          )
+        else
+          report,
+    ];
+  }
+
+  List<HazardReport> get _mappedReports => _allMapReports
       .where((report) => report.status != ReportStatus.rejected)
       .where((report) => report.hasLocation)
       .where((report) => _filter == null || report.type == _filter)
       .toList();
 
+  void _schoolDataChanged() {
+    if (!mounted) return;
+    setState(() {
+      _loadingSchools = _mapData!.schools.loading;
+      _schoolError = _mapData!.schools.error;
+      _schools = _mapData!.schools.data.items
+          .where((r) => r['count'] == null)
+          .map(MapDataService.schoolFromRow)
+          .toList();
+    });
+  }
+
+  void _hazardDataChanged() {
+    if (!mounted) return;
+    setState(() => _hazardError = _mapData!.hazards.error);
+    final data = _mapData!;
+    if ((_routeAssessments.isNotEmpty || _loadingRoutes) &&
+        data.hazards.hasData &&
+        !data.hazards.loading &&
+        !data.hazards.data.clustered &&
+        data.hazards.error == null) {
+      final loaded = {for (final r in data.detailedHazards) r.id: r};
+      final updated = <String, HazardReport>{
+        for (final r in _routeReports)
+          if (loaded.containsKey(r.id) ||
+              data.hazards.bounds?.contains(
+                    LatLng(r.latitude!, r.longitude!),
+                  ) !=
+                  true)
+            r.id: loaded[r.id] ?? r,
+        ...loaded,
+      };
+      if (_routeReportSignature(updated.values) !=
+          _routeReportSignature(_routeReports)) {
+        setState(() {
+          _routeAssessments = [];
+          _routeAvoidLocations = [];
+          _routeRequestVersion++;
+          _loadingRoutes = false;
+          _routeError = 'Reports changed. Compare again to refresh avoidance.';
+        });
+      }
+    }
+  }
+
+  void _infrastructureDataChanged() {
+    if (!mounted) return;
+    setState(() {
+      final data = _mapData!;
+      _loadingInfrastructure = data.infrastructure.loading;
+      _infrastructureError = data.infrastructure.error;
+      if (data.bounds != null) {
+        _infrastructure = InfrastructureSnapshot(
+          bounds: data.bounds!,
+          features: data.infrastructure.data.features,
+          fetchedAt: DateTime.now(),
+        );
+      }
+    });
+  }
+
+  void _scheduleViewport() {
+    if (_visibleBounds != null) {
+      _mapData?.hazardKind = _filter == null
+          ? null
+          : HazardCodec.types[_filter];
+      _mapData?.viewport(
+        GeoBounds.fromMapBounds(_visibleBounds!),
+        _zoom,
+        _visibleLayers,
+      );
+    }
+  }
+
   @override
   void dispose() {
-    _infrastructureDebounce?.cancel();
+    _searchDebounce?.cancel();
+    _cameraDebounce?.cancel();
+    _hazardRefresh?.cancel();
+    _mapAuth?.cancel();
+    _mapData?.dispose();
     _controller.dispose();
-    _overpassService.close();
     _routeService.close();
-    _schoolsRepository?.close();
     _schoolSearchController.dispose();
     _mapFocusNode.dispose();
     super.dispose();
@@ -124,6 +246,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void didUpdateWidget(covariant ExploreScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.reports, widget.reports)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mapData?.invalidateHazards();
+      });
+    }
     if (_routeReportSignature(oldWidget.reports) ==
         _routeReportSignature(widget.reports)) {
       return;
@@ -152,119 +279,72 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _handleCameraChanged(MapCamera camera) {
-    setState(() {
-      _zoom = camera.zoom;
-      _visibleBounds = camera.visibleBounds;
+    // No feature/marker rebuild on every animation frame; publish on settle.
+    _zoom = camera.zoom;
+    _visibleBounds = camera.visibleBounds;
+    _scheduleViewport();
+    _cameraDebounce?.cancel();
+    _cameraDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {});
     });
-    _scheduleInfrastructureLoad(camera.visibleBounds, camera.zoom);
   }
 
-  void _scheduleInfrastructureLoad(LatLngBounds bounds, double zoom) {
-    _infrastructureDebounce?.cancel();
-    if (!widget.enableMapTiles || zoom < _infrastructureZoom) {
-      if (_loadingInfrastructure || _infrastructureError != null) {
-        _infrastructureRequestVersion++;
-        setState(() {
-          _loadingInfrastructure = false;
-          _infrastructureError = null;
-        });
-      }
-      return;
-    }
-    final visible = GeoBounds.fromMapBounds(bounds);
-    final snapshot = _infrastructure;
-    if (snapshot != null && snapshot.bounds.containsBounds(visible)) return;
-    _infrastructureDebounce = Timer(
-      const Duration(milliseconds: 850),
-      () => _loadInfrastructure(visible),
-    );
-  }
+  void _retryInfrastructure() => _mapData?.retry('infrastructure');
 
-  Future<void> _loadInfrastructure(
-    GeoBounds bounds, {
-    bool forceRefresh = false,
-  }) async {
-    final requestVersion = ++_infrastructureRequestVersion;
-    setState(() {
-      _loadingInfrastructure = true;
-      _infrastructureError = null;
-    });
+  Future<void> _selectState(int? fips) async {
+    if (fips == null || fips == _selectedStateFips) return;
+    setState(() => _selectedStateFips = fips);
+    _searchSchools();
     try {
-      final snapshot = await _overpassService.fetch(
-        bounds,
-        forceRefresh: forceRefresh,
-        onProgress: (partialSnapshot, _, _) {
-          if (!mounted || requestVersion != _infrastructureRequestVersion) {
-            return;
-          }
-          setState(() => _infrastructure = partialSnapshot);
-        },
+      final bounds = await _mapData?.stateBounds(
+        usStates.firstWhere((s) => s.fips == fips).code,
       );
-      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
-      setState(() {
-        _infrastructure = snapshot;
-        _loadingInfrastructure = false;
-      });
-    } on TimeoutException {
-      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
-      setState(() {
-        _loadingInfrastructure = false;
-        _infrastructureError = 'OpenStreetMap infrastructure timed out. The basemap and hazards still work.';
-      });
-    } catch (error) {
-      if (!mounted || requestVersion != _infrastructureRequestVersion) return;
-      setState(() {
-        _loadingInfrastructure = false;
-        _infrastructureError = error.toString();
-      });
-    }
-  }
-
-  void _retryInfrastructure() {
-    final bounds = _visibleBounds;
-    if (bounds == null || _zoom < _infrastructureZoom) return;
-    _loadInfrastructure(GeoBounds.fromMapBounds(bounds), forceRefresh: true);
-  }
-
-  Future<void> _loadSchools({bool fitState = false}) async {
-    final requestedFips = _selectedStateFips;
-    setState(() {
-      _loadingSchools = true;
-      _schoolError = null;
-    });
-    try {
-      final schools = await _schoolsRepository!.fetchState(requestedFips);
-      if (!mounted || requestedFips != _selectedStateFips) return;
-      setState(() {
-        _schools = schools;
-        _loadingSchools = false;
-      });
-      if (fitState && schools.isNotEmpty) {
+      if (mounted && fips == _selectedStateFips && bounds != null) {
         _controller.fitCamera(
           CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints(
-              schools.map((school) => school.location).toList(),
-            ),
+            bounds: bounds.mapBounds,
             padding: const EdgeInsets.all(40),
           ),
         );
       }
-    } catch (error) {
-      if (!mounted || requestedFips != _selectedStateFips) return;
-      setState(() {
-        _loadingSchools = false;
-        _schoolError = 'Could not load schools from Urban Institute.';
-      });
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () =>
+              _schoolError = 'State directory unavailable. Retry your search.',
+        );
+      }
     }
   }
 
-  void _selectState(int? fips) {
-    if (fips == null || fips == _selectedStateFips) return;
-    setState(() {
-      _selectedStateFips = fips;
-      _schools = const [];
+  void _searchSchools() {
+    final version = ++_searchVersion;
+    _searchDebounce?.cancel();
+    final query = _schoolSearchController.text.trim();
+    if (query.length < 2) {
+      setState(() => _searchMatches = []);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final schools =
+            await _mapData?.search(
+              query,
+              usStates.firstWhere((s) => s.fips == _selectedStateFips).code,
+            ) ??
+            [];
+        if (mounted && version == _searchVersion) {
+          setState(() => _searchMatches = schools);
+        }
+      } catch (_) {
+        if (mounted && version == _searchVersion) {
+          setState(
+            () =>
+                _schoolError = 'School search unavailable. Retry your search.',
+          );
+        }
+      }
     });
-    if (widget.enableMapTiles) _loadSchools(fitState: true);
   }
 
   void _zoomBy(double amount) {
@@ -284,11 +364,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _controller.move(LatLng(latitude, longitude), camera.zoom);
   }
 
-  List<OsmMapFeature> get _osmSchools =>
-      _infrastructure
-          ?.ofType(InfrastructureType.school)
-          .toList(growable: false) ??
-      const [];
+  List<OsmMapFeature> get _osmSchools => [
+    for (final row in _mapData?.schools.data.items ?? <Map<String, dynamic>>[])
+      OsmMapFeature(
+        id: row['id'] as String,
+        type: InfrastructureType.school,
+        points: [
+          LatLng(
+            (row['latitude'] as num).toDouble(),
+            (row['longitude'] as num).toDouble(),
+          ),
+        ],
+        tags: {
+          'name': row['name'] as String? ?? '${row['count']} schools',
+          if (row['count'] != null) 'count': row['count'].toString(),
+        },
+      ),
+  ];
 
   List<OsmMapFeature> get _osmCrossings =>
       _infrastructure
@@ -299,31 +391,95 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<OsmMapFeature> _features(InfrastructureType type) =>
       _infrastructure?.ofType(type).toList(growable: false) ?? const [];
 
-  List<School> get _schoolSearchResults {
-    final query = _schoolSearchController.text.trim().toLowerCase();
-    if (query.isEmpty) return const [];
-    final state = usStates.firstWhere(
-      (candidate) => candidate.fips == _selectedStateFips,
-    );
-    return _schools
-        .where((school) {
-          final searchable = [
-            school.name,
-            school.city,
-            school.state,
-            school.zipCode,
-            school.district,
-            state.name,
-            state.code,
-          ].join(' ').toLowerCase();
-          return searchable.contains(query);
-        })
-        .take(10)
-        .toList(growable: false);
-  }
+  List<School> get _schoolSearchResults => _searchMatches;
 
   void _focusSchool(School school) {
-    _controller.move(school.location, 16);
+    setState(() => _selectedSchoolId = school.id);
+    _controller.move(school.location, 17);
+    _showSchool(school);
+  }
+
+  void _showSchool(School school) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(school.name, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Text(
+                [
+                  school.address,
+                  school.city,
+                  school.state,
+                  school.zipCode,
+                ].where((p) => p.isNotEmpty).join(', '),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${school.classification == 'private' ? 'Private' : 'Public'} school • NCES EDGE ${school.sourceYear ?? ''} • ${school.id}',
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Campus location is not a verified entrance. Check local conditions.',
+              ),
+              const SizedBox(height: 16),
+              for (final neighbor in _schools.where(
+                (s) =>
+                    s.id != school.id &&
+                    const Distance().as(
+                          LengthUnit.Meter,
+                          s.location,
+                          school.location,
+                        ) <
+                        60,
+              ))
+                ListTile(
+                  leading: const Icon(Icons.school_outlined),
+                  title: Text(neighbor.name),
+                  subtitle: const Text('Nearby campus'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _focusSchool(neighbor);
+                  },
+                ),
+              FilledButton.icon(
+                icon: const Icon(Icons.flag),
+                label: const Text('Use as route destination'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() => _selectedPoint = school.location);
+                  _useSelectedAsRouteDestination();
+                },
+              ),
+              for (final report in _mappedReports.where(
+                (r) =>
+                    const Distance().as(
+                      LengthUnit.Meter,
+                      school.location,
+                      LatLng(r.latitude!, r.longitude!),
+                    ) <
+                    80,
+              ))
+                ListTile(
+                  leading: const Icon(Icons.warning_amber),
+                  title: Text(report.type.label),
+                  subtitle: Text(report.status.label),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showReportDetails(report);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _findCurrentLocation() async {
@@ -386,19 +542,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final origin = _routeOrigin;
     final destination = _routeDestination;
     if (origin == null || destination == null || _loadingRoutes) return;
-    final avoidLocations = _hazardAvoidanceService.locationsForRoute(
-      reports: widget.reports,
-      origin: origin,
-      destination: destination,
-    );
     final requestVersion = ++_routeRequestVersion;
     setState(() {
       _loadingRoutes = true;
       _routeError = null;
       _routeAssessments = const [];
-      _routeAvoidLocations = avoidLocations;
+      _routeAvoidLocations = const [];
     });
     try {
+      final reports =
+          await _mapData?.hazardsForRoute(origin, destination) ??
+          widget.reports;
+      if (!mounted || requestVersion != _routeRequestVersion) return;
+      _routeReports = reports;
+      final avoidLocations = _hazardAvoidanceService.locationsForRoute(
+        reports: reports,
+        origin: origin,
+        destination: destination,
+      );
+      setState(() => _routeAvoidLocations = avoidLocations);
       final routes = await _routeService.compare(
         origin: origin,
         destination: destination,
@@ -407,7 +569,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       if (!mounted || requestVersion != _routeRequestVersion) return;
       final assessments = _routeScorer.score(
         routes: routes,
-        hazards: widget.reports,
+        hazards: _routeReports,
         infrastructure: _infrastructure,
       );
       setState(() {
@@ -453,7 +615,30 @@ class _ExploreScreenState extends State<ExploreScreen> {
     ReportStatus.rejected => const Color(0xFF7D8587),
   };
 
-  void _showReportDetails(HazardReport report) {
+  Future<void> _showReportDetails(HazardReport report) async {
+    final client = widget.liveClient;
+    final userId = client?.auth.currentUser?.id;
+    if (client != null) {
+      try {
+        final loaded = await SupabaseHazardRepository(client)
+            .fetchHazards(reportId: report.id)
+            .timeout(const Duration(seconds: 12));
+        if (!mounted || userId != client.auth.currentUser?.id) return;
+        if (loaded.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This report is no longer available.'),
+            ),
+          );
+          _mapData?.invalidateHazards();
+          return;
+        }
+        report = loaded.single;
+      } catch (_) {
+        if (!mounted || userId != client.auth.currentUser?.id) return;
+      }
+    }
+    if (!mounted) return;
     final colors = Theme.of(context).colorScheme;
     showModalBottomSheet<void>(
       context: context,
@@ -507,6 +692,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
+                for (final other in _mappedReports.where(
+                  (r) =>
+                      r.id != report.id &&
+                      const Distance().as(
+                            LengthUnit.Meter,
+                            LatLng(r.latitude!, r.longitude!),
+                            LatLng(report.latitude!, report.longitude!),
+                          ) <
+                          60,
+                ))
+                  ListTile(
+                    leading: const Icon(Icons.warning_amber),
+                    title: Text(other.type.label),
+                    subtitle: Text(other.status.label),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showReportDetails(other);
+                    },
+                  ),
                 Text(
                   report.description,
                   style: Theme.of(context).textTheme.bodyLarge,
@@ -598,6 +802,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Marker _schoolMarker(OsmMapFeature school) => Marker(
+    key: ValueKey(school.id),
     point: school.center,
     width: 44,
     height: 44,
@@ -608,12 +813,47 @@ class _ExploreScreenState extends State<ExploreScreen> {
         visualDensity: VisualDensity.compact,
         tooltip: 'Center ${school.name}',
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white,
+          backgroundColor: _selectedSchoolId == school.id
+              ? const Color(0xFFE3DFF7)
+              : Colors.white,
           foregroundColor: MapLayerStyle.school,
           side: const BorderSide(color: MapLayerStyle.school, width: 2),
         ),
-        onPressed: () => _controller.move(school.center, 17),
-        icon: const Icon(Icons.school, size: 20),
+        onPressed: () {
+          if (school.tags['count'] != null) {
+            if (_zoom >= 17 && _mapData?.bounds != null) {
+              final bounds = _mapData!.bounds!.expanded(.15);
+              showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (context) => SchoolClusterPanel(
+                  load: (after) => _mapData!.schoolMembers(bounds, after),
+                  onSelect: (school) {
+                    Navigator.pop(context);
+                    _focusSchool(school);
+                  },
+                ),
+              );
+            } else {
+              _controller.move(
+                school.center,
+                (_zoom + 3).clamp(13, 19).toDouble(),
+              );
+            }
+          } else {
+            final record = _schools.where((s) => s.id == school.id).firstOrNull;
+            if (record != null) _focusSchool(record);
+          }
+        },
+        icon: school.tags['count'] != null
+            ? Text(
+                school.tags['count']!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              )
+            : const Icon(Icons.school, size: 20),
       ),
     ),
   );
@@ -626,7 +866,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final visibleSchools = _visibleLayers.contains(MapLayer.schools)
         ? _osmSchools
         : const <OsmMapFeature>[];
-    final visibleCrossings = _visibleLayers.contains(MapLayer.crossings)
+    final visibleCrossings =
+        _zoom >= 15 && _visibleLayers.contains(MapLayer.crossings)
         ? _osmCrossings
         : const <OsmMapFeature>[];
     final visibleReports = _visibleBounds == null
@@ -643,19 +884,29 @@ class _ExploreScreenState extends State<ExploreScreen> {
       for (final layer in MapLayer.values)
         layer: layer == MapLayer.hazards
             ? visibleReports.length
+            : layer == MapLayer.schools
+            ? (_mapData?.schools.data.total ?? 0)
             : _infrastructure?.count(layer) ?? 0,
     };
+    final markerIndex = MapMarkerIndex(
+      visibleSchools.map((s) => s.center),
+      _zoom,
+    );
     final markers = <Marker>[
-      for (final school in visibleSchools) _schoolMarker(school),
       for (var index = 0; index < visibleCrossings.length; index++)
         Marker(
           point: visibleCrossings[index].center,
           width: 34,
           height: 34,
           child: Tooltip(
-            message: 'Mapped pedestrian crossing • OpenStreetMap',
+            message:
+                'Crossing • ${visibleCrossings[index].tags['crossing:signals'] == 'yes' || visibleCrossings[index].tags['crossing'] == 'traffic_signals'
+                    ? 'Signalized'
+                    : visibleCrossings[index].tags['crossing:markings'] != null || visibleCrossings[index].tags['crossing'] == 'marked'
+                    ? 'Marked'
+                    : 'Type unknown'} • OpenStreetMap',
             child: DecoratedBox(
-              key: ValueKey('crossing-marker-$index'),
+              key: ValueKey(visibleCrossings[index].id),
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
@@ -664,8 +915,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   BoxShadow(color: Color(0x29000000), blurRadius: 6),
                 ],
               ),
-              child: const Icon(
-                Icons.directions_walk,
+              child: Icon(
+                visibleCrossings[index].tags['crossing:signals'] == 'yes' ||
+                        visibleCrossings[index].tags['crossing'] ==
+                            'traffic_signals'
+                    ? Icons.traffic
+                    : Icons.directions_walk,
                 size: 19,
                 color: MapLayerStyle.crossing,
               ),
@@ -673,13 +928,75 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ),
         ),
       if (_visibleLayers.contains(MapLayer.hazards))
-        for (final report in mappedReports)
+        for (final report
+            in (_mapData?.hazards.data.clustered == true
+                ? <HazardReport>[]
+                : visibleReports))
           Marker(
+            key: ValueKey(report.id),
             point: LatLng(report.latitude!, report.longitude!),
-            width: 52,
+            width: 148,
             height: 52,
-            child: _reportMarker(report),
+            child: Align(
+              alignment:
+                  markerIndex.nearSchool(
+                    LatLng(report.latitude!, report.longitude!),
+                  )
+                  ? Alignment.centerLeft
+                  : Alignment.center,
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: _reportMarker(report),
+              ),
+            ),
           ),
+      if (_visibleLayers.contains(MapLayer.hazards) &&
+          _mapData?.hazards.data.clustered == true)
+        for (final row in _mapData!.hazards.data.items)
+          Marker(
+            key: ValueKey('hazard-cluster-${row['id']}'),
+            point: LatLng(
+              (row['latitude'] as num).toDouble(),
+              (row['longitude'] as num).toDouble(),
+            ),
+            width: 144,
+            height: 48,
+            child: Align(
+              alignment:
+                  markerIndex.nearSchool(
+                    LatLng(
+                      (row['latitude'] as num).toDouble(),
+                      (row['longitude'] as num).toDouble(),
+                    ),
+                  )
+                  ? Alignment.centerLeft
+                  : Alignment.center,
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: Tooltip(
+                  message:
+                      '${row['count']} reports; highest severity ${row['severity']}/5',
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: MapLayerStyle.hazard,
+                      padding: EdgeInsets.zero,
+                    ),
+                    onPressed: () => _controller.move(
+                      LatLng(
+                        (row['latitude'] as num).toDouble(),
+                        (row['longitude'] as num).toDouble(),
+                      ),
+                      13,
+                    ),
+                    child: Text('${row['count']}'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      for (final school in visibleSchools) _schoolMarker(school),
       if (_selectedPoint case final selected?)
         Marker(
           point: selected,
@@ -734,7 +1051,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   description: 'Search for a school, inspect mapped walking and cycling infrastructure, compare routes, or select a point to report a concern.',
                   icon: Icons.travel_explore,
                   trailing: StatusPill(
-                    label: 'OpenStreetMap • Overpass',
+                    label: 'NCES EDGE • OpenStreetMap',
                     icon: Icons.public,
                   ),
                 ),
@@ -805,7 +1122,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 width: searchWidth,
                                 child: TextField(
                                   controller: _schoolSearchController,
-                                  onChanged: (_) => setState(() {}),
+                                  onChanged: (_) {
+                                    setState(() {});
+                                    _searchSchools();
+                                  },
                                   decoration: InputDecoration(
                                     labelText: 'Search schools and communities',
                                     hintText: 'School, city, ZIP, or district',
@@ -834,7 +1154,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           const LinearProgressIndicator()
                         else if (searchResults.isEmpty)
                           Text(
-                            'No matching public schools found in the selected state.',
+                            'No matching schools found in the selected state.',
                             style: TextStyle(color: colors.onSurfaceVariant),
                           )
                         else
@@ -934,9 +1254,71 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                 _visibleLayers.remove(layer);
                               }
                             });
+                            _scheduleViewport();
                           },
                         ),
                       ),
+                      if (_mapData != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          child: Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final kind in <String?>[
+                                null,
+                                'public',
+                                'private',
+                              ])
+                                ChoiceChip(
+                                  label: Text(
+                                    kind == null
+                                        ? 'All schools'
+                                        : kind == 'public'
+                                        ? 'Public schools'
+                                        : 'Private schools',
+                                  ),
+                                  selected: _mapData!.schoolKind == kind,
+                                  onSelected: (_) {
+                                    setState(() => _mapData!.schoolKind = kind);
+                                    _scheduleViewport();
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
+                      if (_hazardError != null)
+                        TextButton.icon(
+                          onPressed: () => _mapData?.retry('hazards'),
+                          icon: const Icon(Icons.refresh),
+                          label: Text('$_hazardError Retry reports'),
+                        ),
+                      if (_tileError != null)
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _tileError = null;
+                              _tileGeneration++;
+                            });
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: Text('$_tileError Retry tiles'),
+                        ),
+                      if (kDebugMode && _mapData != null) ...[
+                        TextButton.icon(
+                          onPressed: () =>
+                              setState(() => _diagnostics = !_diagnostics),
+                          icon: const Icon(Icons.speed),
+                          label: const Text('Map diagnostics'),
+                        ),
+                        if (_diagnostics)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: SelectableText(
+                              _mapData!.diagnostics,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
+                      ],
                       Container(
                         height: compactLayout ? 360 : 420,
                         decoration: BoxDecoration(
@@ -1015,6 +1397,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                       minZoom: _minZoom,
                                       maxZoom: _maxZoom,
                                       onMapReady: () {
+                                        _mapData?.markMapReady();
                                         _handleCameraChanged(
                                           _controller.camera,
                                         );
@@ -1038,13 +1421,29 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     children: [
                                       if (widget.enableMapTiles)
                                         TileLayer(
+                                          key: ValueKey(
+                                            'tiles-$_tileGeneration',
+                                          ),
                                           urlTemplate: _tileUrl,
+                                          errorTileCallback: (_, _, _) {
+                                            if (mounted && _tileError == null) {
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                    if (mounted) {
+                                                      setState(
+                                                        () => _tileError = 'Base map tiles unavailable. Check your connection.',
+                                                      );
+                                                    }
+                                                  });
+                                            }
+                                          },
                                           userAgentPackageName:
                                               'org.saferoutes.cac',
                                         ),
-                                      if (_visibleLayers.contains(
-                                        MapLayer.sidewalks,
-                                      ))
+                                      if (_zoom >= 15 &&
+                                          _visibleLayers.contains(
+                                            MapLayer.sidewalks,
+                                          ))
                                         PolylineLayer(
                                           key: const ValueKey('sidewalk-layer'),
                                           polylines: [
@@ -1060,9 +1459,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                               ),
                                           ],
                                         ),
-                                      if (_visibleLayers.contains(
-                                        MapLayer.bikePaths,
-                                      ))
+                                      if (_zoom >= 15 &&
+                                          _visibleLayers.contains(
+                                            MapLayer.bikePaths,
+                                          ))
                                         PolylineLayer(
                                           key: const ValueKey(
                                             'bike-path-layer',
@@ -1080,9 +1480,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                               ),
                                           ],
                                         ),
-                                      if (_visibleLayers.contains(
-                                        MapLayer.bikeLanes,
-                                      ))
+                                      if (_zoom >= 15 &&
+                                          _visibleLayers.contains(
+                                            MapLayer.bikeLanes,
+                                          ))
                                         PolylineLayer(
                                           key: const ValueKey(
                                             'bike-lane-layer',
@@ -1100,6 +1501,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                                 pattern: StrokePattern.dashed(
                                                   segments: const [10, 7],
                                                 ),
+                                              ),
+                                          ],
+                                        ),
+                                      if (_zoom > 16 &&
+                                          _visibleLayers.contains(
+                                            MapLayer.walkingPaths,
+                                          ))
+                                        PolylineLayer(
+                                          polylines: [
+                                            for (final feature in _features(
+                                              InfrastructureType.walkingPath,
+                                            ))
+                                              Polyline(
+                                                points: feature.points,
+                                                strokeWidth: 3,
+                                                color: MapLayerStyle.sidewalk,
                                               ),
                                           ],
                                         ),
@@ -1232,7 +1649,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         borderRadius: BorderRadius.circular(8),
                                         child: Padding(
                                           padding: const EdgeInsets.all(8),
-                                          child: Text(_schoolError!),
+                                          child: TextButton(
+                                            onPressed: () =>
+                                                _mapData?.retry('schools'),
+                                            child: Text(
+                                              '$_schoolError Tap to retry.',
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1256,7 +1679,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                             maxWidth: compactLayout ? 260 : 520,
                                           ),
                                           child: const Text(
-                                            '© OpenStreetMap contributors • Infrastructure via Overpass API\nSchools search: Urban Institute / NCES CCD',
+                                            '© OpenStreetMap contributors (ODbL) • NCES EDGE (public domain)',
                                             textAlign: TextAlign.right,
                                             style: TextStyle(
                                               fontSize: 10,
@@ -1339,13 +1762,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           ChoiceChip(
                             label: const Text('All issues'),
                             selected: _filter == null,
-                            onSelected: (_) => setState(() => _filter = null),
+                            onSelected: (_) {
+                              setState(() => _filter = null);
+                              _scheduleViewport();
+                            },
                           ),
                           for (final type in HazardType.values)
                             ChoiceChip(
                               label: Text(type.label),
                               selected: _filter == type,
-                              onSelected: (_) => setState(() => _filter = type),
+                              onSelected: (_) {
+                                setState(() => _filter = type);
+                                _scheduleViewport();
+                              },
                             ),
                         ],
                       ),
@@ -1464,7 +1893,7 @@ class _MapTextAlternative extends StatelessWidget {
                 subtitle: Text(
                   school.tags['operator'] ??
                       school.tags['addr:street'] ??
-                      'OpenStreetMap feature',
+                      'NCES EDGE school location',
                 ),
               ),
             if (schools.length > displayLimit)

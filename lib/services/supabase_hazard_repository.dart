@@ -16,18 +16,31 @@ class SupabaseHazardRepository {
       'id,school_id,type,severity,description,status,latitude,longitude,'
       'is_demo,created_at,reporter_id';
 
-  Future<List<HazardReport>> fetchHazards({String? schoolId}) async {
+  Future<List<HazardReport>> fetchHazards({
+    String? schoolId,
+    String? reportId,
+  }) async {
     // RLS returns reviewed/own reports, or the full queue for moderators.
-    final query = client
-        .from('hazard_reports')
-        .select(fields)
-        .eq('is_demo', false);
-    final rows = schoolId == null
-        ? await query.order('created_at', ascending: false).limit(1000)
-        : await query
-              .eq('school_id', schoolId)
-              .order('created_at', ascending: false)
-              .limit(1000);
+    final rows = <Map<String, dynamic>>[];
+    // Stable keyset pagination: no silent 1,000-row truncation in report lists.
+    String? after;
+    while (true) {
+      var query = client
+          .from('hazard_reports')
+          .select(fields)
+          .eq('is_demo', false);
+      if (schoolId != null) query = query.eq('school_id', schoolId);
+      if (reportId != null) query = query.eq('id', reportId);
+      if (after != null) query = query.gt('id', after);
+      final page = await query.order('id').limit(500);
+      rows.addAll(page);
+      if (page.length < 500) break;
+      after = page.last['id'] as String;
+    }
+    rows.sort(
+      (a, b) =>
+          (b['created_at'] as String).compareTo(a['created_at'] as String),
+    );
     final reports = rows.map(HazardCodec.fromRow).toList();
     if (reports.isEmpty) return reports;
 

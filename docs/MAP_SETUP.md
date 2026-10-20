@@ -1,9 +1,12 @@
 # SafeRoutes interactive map
 
+For the current nationwide architecture, deployed NCES data, import commands,
+measurements, and infrastructure coverage limits, see [Nationwide map](NATIONWIDE_MAP.md).
+
 ## Implemented data sources
 
 - `flutter_map` with OpenStreetMap-compatible raster tiles for pan/zoom.
-- Overpass API viewport queries for schools, mapped sidewalks, pedestrian crossings, bike paths, and bike lanes.
+- Supabase PostGIS viewport queries for imported NCES schools and cached OSM infrastructure, with a bounded server-side infrastructure fallback.
 - Supabase `hazard_reports` for RLS-filtered community reports and authenticated inserts.
 - OpenRouteService walking and cycling alternatives with GeoJSON geometry.
 - Optional device-location recentering on web, Android, and iOS.
@@ -12,33 +15,30 @@ The app does not include fabricated map features or seeded hazard pins. The init
 
 ## Configuration
 
-Pass public client configuration at build/run time. Never use a Supabase secret or `service_role` key in Flutter.
+The existing public Supabase URL and publishable key are configured in
+`lib/main.dart`. Keep service-role credentials on the server. Optional runtime
+configuration:
 
 ```bash
-flutter run -d chrome --web-port 7357 \
-  --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-  --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY \
-  --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
+flutter run -d chrome --web-port 7357 --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
 ```
 
-Optional endpoints:
-
-```bash
---dart-define=MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
---dart-define=OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api/interpreter
-```
-
-Client-side keys are visible in web/mobile builds. Restrict provider keys where supported and use a server-side proxy before high-volume production use.
+`MAP_TILE_URL` can select a compatible raster provider. Infrastructure provider
+configuration is now server-side; see [deployment](NATIONWIDE_MAP.md).
 
 ## Infrastructure loading
 
-The map waits 850 ms after movement, queries only at zoom 14 or closer, expands the viewport slightly, and loads it as four bounded chunks with at most two requests in flight. Completed chunks appear immediately, ten-minute cache entries are reused, stale responses are ignored, and connection or server failures automatically try the fallback endpoint. HTTP 429, total outages, and empty results are shown without disabling the basemap, hazards, or other controls.
+The map waits 300 ms after movement. Schools and hazards load concurrently;
+optional infrastructure starts at zoom 15 with independent loading/error states.
+Buffered geographic caches avoid repeat requests. Schools come from the imported
+NCES directory, not Overpass. Infrastructure comes from indexed regional data or
+the server-cached bounded fallback. See [details](NATIONWIDE_MAP.md).
 
 OpenStreetMap sidewalk and cycleway tagging varies by community. A missing line means **unknown**, not absent or unsafe. Road centerlines carrying `sidewalk=*` or `cycleway=*` indicate mapped tagging; they are not surveyed curb-level geometry.
 
 ## Route scores
 
-OpenRouteService is queried for `foot-walking` and `cycling-regular` alternatives. Before routing, each visible active report (`unverified` or `verified`) becomes a 100 m GeoJSON avoid area. Resolved and rejected reports do not block a route. If a start or destination is already inside an avoid area, the app asks the user to move that point.
+OpenRouteService is queried for `foot-walking` and `cycling-regular` alternatives. Before routing, a geographically scoped hazard read loads reports around both endpoints. Each active report (`unverified` or `verified`) becomes a 100 m GeoJSON avoid area. Resolved and rejected reports do not block a route. If a start or destination is already inside an avoid area, the app asks the user to move that point.
 
 Each returned route begins at 80 points:
 
@@ -59,7 +59,7 @@ Unverified, rejected, and resolved reports do not reduce a route score. Missing 
 
 ```bash
 flutter pub get
-dart analyze lib test
+flutter analyze --no-pub
 flutter test
 ```
 

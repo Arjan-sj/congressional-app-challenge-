@@ -95,7 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final repository = SupabaseHazardRepository(client);
-      final loaded = await repository.fetchHazards();
+      final loaded = await repository.fetchHazards(
+        schoolId: _selectedIndex == 1 || _selectedIndex == 4
+            ? null
+            : PilotSchool.id,
+      );
       final canModerate = await repository.canModerate();
       final flags = await repository.fetchFlags(PilotSchool.id);
       if (mounted && version == _refreshVersion) {
@@ -110,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted && version == _refreshVersion) {
         setState(() {
           _loadError = 'Database connection failed: $error';
-          _reports = [];
+          // Keep the last successful reports on a temporary connection failure.
           _flags = [];
           _canModerate = false;
           if (_selectedIndex == 4) _selectedIndex = 1;
@@ -246,7 +250,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted || client.auth.currentUser?.id != actorId) return;
     setState(() {
       _refreshVersion++;
-      _reports.removeWhere((candidate) => candidate.id == report.id);
+      _reports = _reports
+          .where((candidate) => candidate.id != report.id)
+          .toList();
       _flags.removeWhere((flag) => flag.reportId == report.id);
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -286,7 +292,8 @@ class _HomeScreenState extends State<HomeScreen> {
         .submitHazard(report, photo: photo, onProgress: onProgress);
     if (!mounted) return;
     setState(() {
-      _reports.insert(0, saved);
+      _refreshVersion++;
+      _reports = [saved, ..._reports];
       _selectedLatitude = null;
       _selectedLongitude = null;
       _selectedIndex = 0;
@@ -320,11 +327,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _selectTab(int index) {
+    setState(() => _selectedIndex = index);
+    if (index == 1 || index == 4) unawaited(_refreshReports());
+  }
+
   @override
   Widget build(BuildContext context) {
     final screens = [
       ExploreScreen(
         reports: _reports,
+        liveClient: widget.liveClient,
         onReportAt: _startReport,
         onSelectLocation: _selectLocation,
         enableMapTiles: widget.enableMapTiles,
@@ -514,8 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   extended: true,
                   backgroundColor: Colors.transparent,
                   selectedIndex: _selectedIndex,
-                  onDestinationSelected: (index) =>
-                      setState(() => _selectedIndex = index),
+                  onDestinationSelected: _selectTab,
                   groupAlignment: -0.82,
                   useIndicator: true,
                   labelType: NavigationRailLabelType.none,
@@ -548,8 +560,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: MediaQuery.sizeOf(context).width < 900
           ? NavigationBar(
               selectedIndex: _selectedIndex,
-              onDestinationSelected: (index) =>
-                  setState(() => _selectedIndex = index),
+              onDestinationSelected: _selectTab,
               destinations: destinations,
             )
           : null,

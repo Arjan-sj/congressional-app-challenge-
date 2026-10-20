@@ -2,12 +2,16 @@
 
 A Flutter prototype for documenting school walking and biking concerns. Built for the Congressional App Challenge.
 
-> **Current stage: Pilot prototype.** The Flutter app includes live OpenStreetMap infrastructure from Overpass, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
+> **Current stage: Pilot prototype.** The Flutter app includes imported nationwide NCES schools and cached OpenStreetMap infrastructure, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
 
 The separate Analytics workspace adds RLS-aware overview metrics, trends,
 interactive hazard heatmaps, school/category comparisons, Realtime refresh,
 and privacy-safe CSV, XLSX, PDF, JSON, and GeoJSON exports. See
 [Analytics architecture and verification](docs/ANALYTICS.md).
+
+The nationwide map now uses indexed geographic queries, independent layer loading,
+clustering, and bounded server-side infrastructure caching. See
+[architecture, imports, deployment, and measured checks](docs/NATIONWIDE_MAP.md).
 
 ## Run locally (macOS or Linux)
 

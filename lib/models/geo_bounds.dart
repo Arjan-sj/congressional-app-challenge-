@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -9,14 +7,13 @@ class GeoBounds {
     required this.west,
     required this.north,
     required this.east,
-  }) : assert(south <= north),
-       assert(west <= east);
+  }) : assert(south <= north);
 
   factory GeoBounds.fromMapBounds(LatLngBounds bounds) => GeoBounds(
     south: bounds.south,
-    west: bounds.west,
+    west: bounds.longitudeWidth >= 360 ? -180 : _longitude(bounds.west),
     north: bounds.north,
-    east: bounds.east,
+    east: bounds.longitudeWidth >= 360 ? 180 : _longitude(bounds.east),
   );
 
   final double south;
@@ -25,7 +22,15 @@ class GeoBounds {
   final double east;
 
   double get latitudeSpan => north - south;
-  double get longitudeSpan => east - west;
+  static double _longitude(double value) => (value + 180) % 360 - 180;
+  double get longitudeSpan => east >= west ? east - west : east + 360 - west;
+  bool get crossesAntimeridian => west > east;
+  Map<String, dynamic> get rpcParams => {
+    'min_lat': south,
+    'min_lon': west,
+    'max_lat': north,
+    'max_lon': east,
+  };
 
   LatLngBounds get mapBounds =>
       LatLngBounds(LatLng(south, west), LatLng(north, east));
@@ -33,23 +38,30 @@ class GeoBounds {
   bool contains(LatLng point) =>
       point.latitude >= south &&
       point.latitude <= north &&
-      point.longitude >= west &&
-      point.longitude <= east;
+      (crossesAntimeridian
+          ? point.longitude >= west || point.longitude <= east
+          : point.longitude >= west && point.longitude <= east);
 
   bool containsBounds(GeoBounds other) =>
       other.south >= south &&
       other.north <= north &&
-      other.west >= west &&
-      other.east <= east;
+      longitudeSpan >= other.longitudeSpan &&
+      (longitudeSpan == 360 ||
+          ((other.west - west + 360) % 360) + other.longitudeSpan <=
+              longitudeSpan + 1e-9);
 
   GeoBounds expanded(double fraction) {
     final latitudePadding = latitudeSpan * fraction;
     final longitudePadding = longitudeSpan * fraction;
     return GeoBounds(
-      south: math.max(-85, south - latitudePadding),
-      west: math.max(-180, west - longitudePadding),
-      north: math.min(85, north + latitudePadding),
-      east: math.min(180, east + longitudePadding),
+      south: (south - latitudePadding).clamp(-90, 90),
+      west: longitudeSpan + 2 * longitudePadding >= 360
+          ? -180
+          : _longitude(west - longitudePadding),
+      north: (north + latitudePadding).clamp(-90, 90),
+      east: longitudeSpan + 2 * longitudePadding >= 360
+          ? 180
+          : _longitude(east + longitudePadding),
     );
   }
 

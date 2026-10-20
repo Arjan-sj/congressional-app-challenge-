@@ -6,6 +6,7 @@ import 'map_layer.dart';
 enum InfrastructureType {
   school(MapLayer.schools),
   sidewalk(MapLayer.sidewalks),
+  walkingPath(MapLayer.walkingPaths),
   crossing(MapLayer.crossings),
   bikePath(MapLayer.bikePaths),
   bikeLane(MapLayer.bikeLanes);

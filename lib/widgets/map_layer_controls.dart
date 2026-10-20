@@ -15,6 +15,7 @@ class MapLayerStyle {
   static Color color(MapLayer layer) => switch (layer) {
     MapLayer.schools => school,
     MapLayer.sidewalks => sidewalk,
+    MapLayer.walkingPaths => sidewalk,
     MapLayer.crossings => crossing,
     MapLayer.bikePaths => bikePath,
     MapLayer.bikeLanes => bikeLane,
@@ -24,6 +25,7 @@ class MapLayerStyle {
   static IconData icon(MapLayer layer) => switch (layer) {
     MapLayer.schools => Icons.school,
     MapLayer.sidewalks => Icons.directions_walk,
+    MapLayer.walkingPaths => Icons.hiking,
     MapLayer.crossings => Icons.add_road,
     MapLayer.bikePaths => Icons.route_outlined,
     MapLayer.bikeLanes => Icons.pedal_bike,
@@ -54,7 +56,7 @@ class MapLayerControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final infrastructureReady = zoom >= 14;
+    final infrastructureReady = zoom >= 15;
     return Semantics(
       container: true,
       label: 'Map key and layer visibility controls',
