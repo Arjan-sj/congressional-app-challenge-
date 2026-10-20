@@ -33,6 +33,8 @@ class HazardReport {
     this.latitude,
     this.longitude,
     this.isDemo = false,
+    this.photoPath,
+    this.photoSignedUrl,
   }) : assert(severity >= 1 && severity <= 5);
 
   final String id;
@@ -51,7 +53,12 @@ class HazardReport {
   /// Reserved for explicitly labelled fixtures imported from test data.
   final bool isDemo;
 
+  /// Private Storage object path and its short-lived display URL.
+  final String? photoPath;
+  final String? photoSignedUrl;
+
   bool get hasLocation => latitude != null && longitude != null;
+  bool get hasPhoto => photoPath != null;
 
   HazardReport withStatus(ReportStatus status) => HazardReport(
     id: id,
@@ -65,5 +72,23 @@ class HazardReport {
     latitude: latitude,
     longitude: longitude,
     isDemo: isDemo,
+    photoPath: photoPath,
+    photoSignedUrl: photoSignedUrl,
+  );
+
+  HazardReport withPhoto({String? path, String? signedUrl}) => HazardReport(
+    id: id,
+    schoolId: schoolId,
+    type: type,
+    severity: severity,
+    description: description,
+    createdAt: createdAt,
+    status: status,
+    reporterId: reporterId,
+    latitude: latitude,
+    longitude: longitude,
+    isDemo: isDemo,
+    photoPath: path,
+    photoSignedUrl: signedUrl,
   );
 }

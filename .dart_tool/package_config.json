@@ -92,6 +92,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "cross_file",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/cross_file-0.3.5+5",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
       "name": "crypto",
       "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/crypto-3.0.7",
       "packageUri": "lib/",
@@ -176,6 +182,30 @@
       "languageVersion": "3.12"
     },
     {
+      "name": "file_selector_linux",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/file_selector_linux-0.9.4+1",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
+      "name": "file_selector_macos",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/file_selector_macos-0.9.5+2",
+      "packageUri": "lib/",
+      "languageVersion": "3.13"
+    },
+    {
+      "name": "file_selector_platform_interface",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/file_selector_platform_interface-2.7.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
+    },
+    {
+      "name": "file_selector_windows",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/file_selector_windows-0.9.3+6",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    },
+    {
       "name": "fixnum",
       "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/fixnum-1.1.1",
       "packageUri": "lib/",
@@ -204,6 +234,12 @@
       "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_map-8.3.2",
       "packageUri": "lib/",
       "languageVersion": "3.6"
+    },
+    {
+      "name": "flutter_plugin_android_lifecycle",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.35",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
     },
     {
       "name": "flutter_test",
@@ -306,6 +342,54 @@
       "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image-4.3.0",
       "packageUri": "lib/",
       "languageVersion": "2.15"
+    },
+    {
+      "name": "image_picker",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker-1.2.4",
+      "packageUri": "lib/",
+      "languageVersion": "3.11"
+    },
+    {
+      "name": "image_picker_android",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_android-0.8.13+25",
+      "packageUri": "lib/",
+      "languageVersion": "3.12"
+    },
+    {
+      "name": "image_picker_for_web",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_for_web-3.1.1",
+      "packageUri": "lib/",
+      "languageVersion": "3.8"
+    },
+    {
+      "name": "image_picker_ios",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_ios-0.8.13+12",
+      "packageUri": "lib/",
+      "languageVersion": "3.13"
+    },
+    {
+      "name": "image_picker_linux",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_linux-0.2.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.6"
+    },
+    {
+      "name": "image_picker_macos",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_macos-0.2.2+1",
+      "packageUri": "lib/",
+      "languageVersion": "3.9"
+    },
+    {
+      "name": "image_picker_platform_interface",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_platform_interface-2.11.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.11"
+    },
+    {
+      "name": "image_picker_windows",
+      "rootUri": "file:///C:/Users/binup/AppData/Local/Pub/Cache/hosted/pub.dev/image_picker_windows-0.2.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.6"
     },
     {
       "name": "intl",

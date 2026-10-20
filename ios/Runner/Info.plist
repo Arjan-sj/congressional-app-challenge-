@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SafeRoutes uses your location only when you ask the map to recenter nearby.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SafeRoutes uses the camera only when you choose to photograph hazard evidence.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SafeRoutes accesses your photo library only when you choose hazard evidence to upload.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

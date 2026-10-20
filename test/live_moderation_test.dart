@@ -65,7 +65,8 @@ Future<SupabaseClient> testClient({
                 },
               ]
             : [];
-      } else if (path.endsWith('/report_flags') ||
+      } else if (path.endsWith('/hazard_report_photos') ||
+          path.endsWith('/report_flags') ||
           path.endsWith('/report_moderation_history')) {
         body = [];
       } else {

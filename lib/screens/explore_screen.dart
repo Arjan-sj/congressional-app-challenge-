@@ -20,6 +20,7 @@ import '../services/overpass_service.dart';
 import '../services/route_safety_scorer.dart';
 import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/hazard_photo_view.dart';
 import '../widgets/map_layer_controls.dart';
 import '../widgets/route_planner_panel.dart';
 
@@ -162,6 +163,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _infrastructureDebounce?.cancel();
     if (!widget.enableMapTiles || zoom < _infrastructureZoom) {
       if (_loadingInfrastructure || _infrastructureError != null) {
+        _infrastructureRequestVersion++;
         setState(() {
           _loadingInfrastructure = false;
           _infrastructureError = null;
@@ -191,6 +193,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final snapshot = await _overpassService.fetch(
         bounds,
         forceRefresh: forceRefresh,
+        onProgress: (partialSnapshot, _, _) {
+          if (!mounted || requestVersion != _infrastructureRequestVersion) {
+            return;
+          }
+          setState(() => _infrastructure = partialSnapshot);
+        },
       );
       if (!mounted || requestVersion != _infrastructureRequestVersion) return;
       setState(() {
@@ -452,96 +460,112 @@ class _ExploreScreenState extends State<ExploreScreen> {
       showDragHandle: true,
       isScrollControlled: true,
       backgroundColor: colors.surface,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .85,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: colors.errorContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.report_gmailerrorred_outlined,
+                        color: colors.onErrorContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            report.type.label,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          Text(
+                            report.isDemo
+                                ? 'Community-submitted demo'
+                                : 'Community report',
+                            style: TextStyle(color: colors.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                    StatusPill(label: report.status.label),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  report.description,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                if (report.photoSignedUrl case final url?) ...[
+                  const SizedBox(height: 18),
+                  HazardPhotoView(url: url),
+                ] else if (report.hasPhoto) ...[
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Photo evidence is attached but its temporary link is unavailable. Refresh and try again.',
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    LabeledIcon(
+                      icon: Icons.signal_cellular_alt,
+                      label: 'Self-reported',
+                      value: 'Severity ${report.severity}/5',
+                    ),
+                    LabeledIcon(
+                      icon: Icons.fact_check_outlined,
+                      label: 'Review status',
+                      value: report.status.label,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
                 Container(
-                  width: 46,
-                  height: 46,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: colors.errorContainer,
+                    color: const Color(0xFFFFF6E5),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(
-                    Icons.report_gmailerrorred_outlined,
-                    color: colors.onErrorContainer,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        report.type.label,
-                        style: Theme.of(context).textTheme.titleLarge,
+                      const Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: Color(0xFF815500),
                       ),
-                      Text(
-                        report.isDemo
-                            ? 'Community-submitted demo'
-                            : 'Community report',
-                        style: TextStyle(color: colors.onSurfaceVariant),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          report.isDemo
+                              ? 'Demo data — not a verified safety finding.'
+                              : 'Community report — independently verify.',
+                          style: const TextStyle(color: Color(0xFF674500)),
+                        ),
                       ),
                     ],
                   ),
                 ),
-                StatusPill(label: report.status.label),
               ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              report.description,
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                LabeledIcon(
-                  icon: Icons.signal_cellular_alt,
-                  label: 'Self-reported',
-                  value: 'Severity ${report.severity}/5',
-                ),
-                LabeledIcon(
-                  icon: Icons.fact_check_outlined,
-                  label: 'Review status',
-                  value: report.status.label,
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF6E5),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.info_outline,
-                    size: 20,
-                    color: Color(0xFF815500),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      report.isDemo
-                          ? 'Demo data — not a verified safety finding.'
-                          : 'Community report — independently verify.',
-                      style: const TextStyle(color: Color(0xFF674500)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

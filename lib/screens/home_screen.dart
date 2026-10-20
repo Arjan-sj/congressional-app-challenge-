@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/pilot_school.dart';
 import '../models/accessibility_preferences.dart';
+import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
 import '../models/report_moderation.dart';
 import '../services/supabase_hazard_repository.dart';
@@ -154,6 +155,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ? (status, reason) =>
                     _moderateReport(report, status, reason, actorId!)
               : null,
+          onDelete:
+              actorId != null && (_canModerate || report.reporterId == actorId)
+              ? () => _deleteReport(report, actorId)
+              : null,
         );
       },
     );
@@ -231,6 +236,24 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _deleteReport(HazardReport report, String actorId) async {
+    final client = widget.liveClient;
+    if (client == null) return;
+    if (client.auth.currentUser?.id != actorId) {
+      throw StateError('Your account changed. Reopen this report.');
+    }
+    await SupabaseHazardRepository(client).deleteHazard(report);
+    if (!mounted || client.auth.currentUser?.id != actorId) return;
+    setState(() {
+      _refreshVersion++;
+      _reports.removeWhere((candidate) => candidate.id == report.id);
+      _flags.removeWhere((flag) => flag.reportId == report.id);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report and photo evidence deleted.')),
+    );
+  }
+
   // The map selection is shared across tabs. Selecting a map point must
   // survive navigation even if the user taps the Report tab directly.
   void _selectLocation(double latitude, double longitude) {
@@ -248,14 +271,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _saveReport(HazardReport report) async {
+  Future<void> _saveReport(
+    HazardReport report,
+    HazardPhotoDraft? photo,
+    ValueChanged<double> onProgress,
+  ) async {
     final client = widget.liveClient;
     if (client == null) {
       throw StateError(
         'Supabase is not configured. Start with SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.',
       );
     }
-    final saved = await SupabaseHazardRepository(client).submitHazard(report);
+    final saved = await SupabaseHazardRepository(client)
+        .submitHazard(report, photo: photo, onProgress: onProgress);
     if (!mounted) return;
     setState(() {
       _reports.insert(0, saved);
