@@ -19,6 +19,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!config/*.example.json
 *.local
 *.keystore
 *.jks

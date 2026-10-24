@@ -14,6 +14,7 @@ class SafeRoutesApp extends StatefulWidget {
     this.liveClient,
     this.persistAccessibilityPreferences = true,
     this.enableLiveUpdates = true,
+    this.environmentName = 'production',
   });
 
   /// false in widget tests to keep them independent of network map tiles.
@@ -21,6 +22,7 @@ class SafeRoutesApp extends StatefulWidget {
   final SupabaseClient? liveClient;
   final bool persistAccessibilityPreferences;
   final bool enableLiveUpdates;
+  final String environmentName;
 
   @override
   State<SafeRoutesApp> createState() => _SafeRoutesAppState();
@@ -193,6 +195,7 @@ class _SafeRoutesAppState extends State<SafeRoutesApp> {
         );
       },
       home: HomeScreen(
+        environmentName: widget.environmentName,
         enableLiveUpdates: widget.enableLiveUpdates,
         enableMapTiles: widget.enableMapTiles,
         liveClient: widget.liveClient,

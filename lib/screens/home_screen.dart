@@ -23,6 +23,7 @@ class HomeScreen extends StatefulWidget {
     this.enableMapTiles = true,
     this.liveClient,
     this.enableLiveUpdates = true,
+    this.environmentName = 'production',
     required this.accessibilityPreferences,
     required this.onAccessibilityPreferencesChanged,
   });
@@ -30,6 +31,7 @@ class HomeScreen extends StatefulWidget {
   final bool enableMapTiles;
   final SupabaseClient? liveClient;
   final bool enableLiveUpdates;
+  final String environmentName;
   final AccessibilityPreferences accessibilityPreferences;
   final ValueChanged<AccessibilityPreferences>
   onAccessibilityPreferencesChanged;
@@ -494,7 +496,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(width: 5),
                     Text(
-                      _live ? 'PILOT DATABASE' : 'PROTOTYPE',
+                      _live
+                          ? widget.environmentName.toUpperCase()
+                          : 'PROTOTYPE',
                       style: const TextStyle(
                         color: Color(0xFF704900),
                         fontSize: 11,

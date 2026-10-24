@@ -102,6 +102,7 @@ void main() {
       await tester.pumpWidget(
         SafeRoutesApp(
           enableLiveUpdates: false,
+          environmentName: moderator ? 'staging' : 'local',
           liveClient: client,
           enableMapTiles: false,
           persistAccessibilityPreferences: false,
@@ -113,6 +114,7 @@ void main() {
         moderator ? findsOneWidget : findsNothing,
       );
       expect(find.textContaining('Database connection failed'), findsNothing);
+      expect(find.text(moderator ? 'STAGING' : 'LOCAL'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
