@@ -481,6 +481,7 @@ class MapDataService {
     id: row['id'] as String,
     name: row['name'] as String,
     district: row['district'] as String? ?? 'District unavailable',
+    districtId: schoolDistrictIdFromRow(row),
     address: row['address'] as String? ?? '',
     city: row['city'] as String? ?? '',
     state: row['state'] as String? ?? '',

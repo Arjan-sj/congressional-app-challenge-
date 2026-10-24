@@ -23,6 +23,7 @@ class School {
     required this.levels,
     this.classification = 'public',
     this.sourceYear,
+    this.districtId,
   });
 
   final String classification;
@@ -30,6 +31,7 @@ class School {
   final String id;
   final String name;
   final String district;
+  final String? districtId;
   final String address;
   final String city;
   final String state;
@@ -41,4 +43,15 @@ class School {
   LatLng get location => LatLng(latitude, longitude);
 
   String get levelLabel => levels.map((level) => level.label).join(' / ');
+}
+
+/// Reads a normalized NCES relationship without inferring one from a name.
+/// Private schools do not participate in the public CCD district directory.
+String? schoolDistrictIdFromRow(Map<String, dynamic> row) {
+  if (row['classification'] == 'private') return null;
+  final value = row['district_id'];
+  if (value is! String || !RegExp(r'^nces-lea:[0-9]{7}$').hasMatch(value)) {
+    return null;
+  }
+  return value;
 }

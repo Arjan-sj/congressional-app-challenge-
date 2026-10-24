@@ -3,11 +3,13 @@ on:
   pull_request:
     paths:
       - 'supabase/**'
+      - 'scripts/**'
       - '.github/workflows/hazard-testing.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/**'
+      - 'scripts/**'
       - '.github/workflows/hazard-testing.yml'
 permissions:
   contents: read
@@ -23,3 +25,7 @@ jobs:
           cache-dependency-path: supabase/tests/package-lock.json
       - run: npm ci --include=dev --prefix supabase/tests
       - run: npm test --prefix supabase/tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s scripts -p 'test_*.py'

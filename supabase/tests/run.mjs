@@ -4,7 +4,7 @@ import { createDatabase } from './database.mjs';
 
 const db = await createDatabase(console.log);
 try {
-  for (const name of ['nearest_school_association.sql', 'nationwide_map.sql', 'report_moderation.sql']) {
+  for (const name of ['nearest_school_association.sql', 'nationwide_map.sql', 'report_moderation.sql', 'school_districts.sql']) {
     const result = await db.exec(await readFile(new URL(`../checks/${name}`, import.meta.url), 'utf8'));
     console.log(`PASS ${name} (${result.length} statements)`);
   }
