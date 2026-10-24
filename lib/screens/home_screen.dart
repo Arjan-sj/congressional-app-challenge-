@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../data/pilot_school.dart';
 import '../models/accessibility_preferences.dart';
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
@@ -23,12 +22,14 @@ class HomeScreen extends StatefulWidget {
     super.key,
     this.enableMapTiles = true,
     this.liveClient,
+    this.enableLiveUpdates = true,
     required this.accessibilityPreferences,
     required this.onAccessibilityPreferencesChanged,
   });
 
   final bool enableMapTiles;
   final SupabaseClient? liveClient;
+  final bool enableLiveUpdates;
   final AccessibilityPreferences accessibilityPreferences;
   final ValueChanged<AccessibilityPreferences>
   onAccessibilityPreferencesChanged;
@@ -41,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   late List<HazardReport> _reports;
   StreamSubscription<AuthState>? _authSubscription;
+  Timer? _reportChangesDebounce;
   double? _selectedLatitude;
   double? _selectedLongitude;
   bool _loading = false;
@@ -59,6 +61,25 @@ class _HomeScreenState extends State<HomeScreen> {
     _reports = [];
     _canModerate = false;
     if (widget.liveClient case final client?) {
+      if (widget.enableLiveUpdates) {
+        client
+            .channel('home-report-associations')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: 'hazard_reports',
+              callback: (_) {
+                _reportChangesDebounce?.cancel();
+                _reportChangesDebounce = Timer(
+                  const Duration(milliseconds: 450),
+                  () {
+                    if (mounted) unawaited(_refreshReports());
+                  },
+                );
+              },
+            )
+            .subscribe();
+      }
       _authSubscription = client.auth.onAuthStateChange.listen((_) {
         unawaited(_refreshReports());
       });
@@ -71,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _reportChangesDebounce?.cancel();
     super.dispose();
   }
 
@@ -95,13 +117,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final repository = SupabaseHazardRepository(client);
-      final loaded = await repository.fetchHazards(
-        schoolId: _selectedIndex == 1 || _selectedIndex == 4
-            ? null
-            : PilotSchool.id,
-      );
+      final loaded = await repository.fetchHazards();
       final canModerate = await repository.canModerate();
-      final flags = await repository.fetchFlags(PilotSchool.id);
+      final flags = await repository.fetchFlags();
       if (mounted && version == _refreshVersion) {
         setState(() {
           _reports = loaded;
@@ -351,8 +369,12 @@ class _HomeScreenState extends State<HomeScreen> {
         client: widget.liveClient,
         isActive: _selectedIndex == 2,
         enableMapTiles: widget.enableMapTiles,
+        refreshVersion: _refreshVersion,
       ),
       ReportFormScreen(
+        lookupSchools: widget.liveClient == null
+            ? null
+            : SupabaseHazardRepository(widget.liveClient!).findNearbySchools,
         onSubmit: _saveReport,
         onChooseLocation: () => setState(() => _selectedIndex = 0),
         selectedLatitude: _selectedLatitude,

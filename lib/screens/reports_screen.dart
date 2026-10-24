@@ -425,6 +425,10 @@ class _ReportCard extends StatelessWidget {
                         icon: Icons.science_outlined,
                         text: report.isDemo ? 'Demo only' : 'Community entry',
                       ),
+                      _MetaItem(
+                        icon: Icons.school_outlined,
+                        text: report.schoolName ?? report.schoolId,
+                      ),
                       if (report.hasPhoto)
                         const _MetaItem(
                           icon: Icons.photo_outlined,

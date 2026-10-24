@@ -35,10 +35,12 @@ class HazardReport {
     this.isDemo = false,
     this.photoPath,
     this.photoSignedUrl,
+    this.schoolName,
   }) : assert(severity >= 1 && severity <= 5);
 
   final String id;
   final String schoolId;
+  final String? schoolName;
   final HazardType type;
   final int severity;
   final String description;
@@ -63,6 +65,7 @@ class HazardReport {
   HazardReport withStatus(ReportStatus status) => HazardReport(
     id: id,
     schoolId: schoolId,
+    schoolName: schoolName,
     type: type,
     severity: severity,
     description: description,
@@ -79,6 +82,7 @@ class HazardReport {
   HazardReport withPhoto({String? path, String? signedUrl}) => HazardReport(
     id: id,
     schoolId: schoolId,
+    schoolName: schoolName,
     type: type,
     severity: severity,
     description: description,

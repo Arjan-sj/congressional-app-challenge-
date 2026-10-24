@@ -92,7 +92,9 @@ class HazardRankingService {
         ) {
           if (visited.contains(candidateIndex)) continue;
           final candidate = reports[candidateIndex];
-          if (!candidate.hasLocation || candidate.type != current.type) {
+          if (!candidate.hasLocation ||
+              candidate.type != current.type ||
+              candidate.schoolId != current.schoolId) {
             continue;
           }
           if (_distanceMeters(current, candidate) <= duplicateRadiusMeters) {

@@ -21,6 +21,7 @@ class HazardCodec {
     return HazardReport(
       id: row['id'] as String,
       schoolId: row['school_id'] as String,
+      schoolName: (row['school'] as Map?)?['name'] as String?,
       type: type,
       severity: (row['severity'] as num).toInt(),
       description: row['description'] as String,
@@ -44,7 +45,9 @@ class HazardCodec {
         report.description.trim().length > 250) {
       throw ArgumentError('Description must be 5–250 characters.');
     }
-    if (report.latitude! < -90 ||
+    if (!report.latitude!.isFinite ||
+        !report.longitude!.isFinite ||
+        report.latitude! < -90 ||
         report.latitude! > 90 ||
         report.longitude! < -180 ||
         report.longitude! > 180) {

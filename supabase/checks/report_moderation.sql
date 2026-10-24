@@ -28,12 +28,13 @@ insert into auth.users(id) values
   ('10000000-0000-0000-0000-000000000003');
 insert into public.report_moderators(user_id)
   values ('10000000-0000-0000-0000-000000000003');
+insert into public.schools(id,name,latitude,longitude) values ('moderation-test-school','Moderation test school',42,-88);
 insert into public.hazard_reports
   (id, school_id, latitude, longitude, type, severity, description, reporter_id, status)
 values
-  ('20000000-0000-0000-0000-000000000001', 'sample-school', 42, -88, 'blocked_path', 3,
+  ('20000000-0000-0000-0000-000000000001', 'moderation-test-school', 42, -88, 'blocked_path', 3,
    'Test own pending report', '10000000-0000-0000-0000-000000000001', 'unverified'),
-  ('20000000-0000-0000-0000-000000000002', 'sample-school', 42, -88, 'blocked_path', 3,
+  ('20000000-0000-0000-0000-000000000002', 'moderation-test-school', 42, -88, 'blocked_path', 3,
    'Test another pending report', '10000000-0000-0000-0000-000000000002', 'unverified');
 
 set local role anon;

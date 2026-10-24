@@ -11,9 +11,10 @@ void main() {
     double? latitude,
     double? longitude,
     ReportStatus status = ReportStatus.unverified,
+    String schoolId = 'school',
   }) => HazardReport(
     id: id,
-    schoolId: 'school',
+    schoolId: schoolId,
     type: type,
     severity: severity,
     description: 'Test hazard',
@@ -71,6 +72,24 @@ void main() {
     expect(grouped.recencyScore, 20);
     expect(grouped.totalScore, 77);
     expect(grouped.priority, HazardPriority.high);
+  });
+
+  test('shared campus reports remain grouped by school association', () {
+    final now = DateTime(2026, 10, 18);
+    final rankings = const HazardRankingService().rank([
+      for (final id in ['A', 'B'])
+        report(
+          id: id,
+          schoolId: id,
+          type: HazardType.blockedPath,
+          severity: 3,
+          createdAt: now,
+          latitude: 42,
+          longitude: -88,
+        ),
+    ], now: now);
+    expect(rankings, hasLength(2));
+    expect(rankings.every((r) => r.reportCount == 1), isTrue);
   });
 
   test('does not group reports farther than 75 meters', () {

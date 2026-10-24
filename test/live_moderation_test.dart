@@ -101,6 +101,7 @@ void main() {
       });
       await tester.pumpWidget(
         SafeRoutesApp(
+          enableLiveUpdates: false,
           liveClient: client,
           enableMapTiles: false,
           persistAccessibilityPreferences: false,
@@ -126,6 +127,7 @@ void main() {
     });
     await tester.pumpWidget(
       SafeRoutesApp(
+        enableLiveUpdates: false,
         liveClient: client,
         enableMapTiles: false,
         persistAccessibilityPreferences: false,
@@ -193,6 +195,7 @@ void main() {
       });
       await tester.pumpWidget(
         SafeRoutesApp(
+          enableLiveUpdates: false,
           liveClient: client,
           enableMapTiles: false,
           persistAccessibilityPreferences: false,

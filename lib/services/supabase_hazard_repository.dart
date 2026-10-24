@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
 import '../models/report_moderation.dart';
+import '../models/nearby_school.dart';
 import 'hazard_codec.dart';
 
 class SupabaseHazardRepository {
@@ -12,9 +13,24 @@ class SupabaseHazardRepository {
   static const _metadataBatchSize = 100;
   static const _signedUrlBatchSize = 12;
 
+  Future<List<NearbySchool>> findNearbySchools(
+    double latitude,
+    double longitude,
+  ) async {
+    final rows = await client.rpc(
+      'nearest_schools',
+      params: {'p_latitude': latitude, 'p_longitude': longitude},
+    );
+    return (rows as List)
+        .map(
+          (row) => NearbySchool.fromJson(Map<String, dynamic>.from(row as Map)),
+        )
+        .toList(growable: false);
+  }
+
   static const fields =
       'id,school_id,type,severity,description,status,latitude,longitude,'
-      'is_demo,created_at,reporter_id';
+      'is_demo,created_at,reporter_id,school:schools!hazard_reports_school_id_fkey(name)';
 
   Future<List<HazardReport>> fetchHazards({
     String? schoolId,
@@ -22,6 +38,14 @@ class SupabaseHazardRepository {
   }) async {
     // RLS returns reviewed/own reports, or the full queue for moderators.
     final rows = <Map<String, dynamic>>[];
+    final schoolIds = <String>[?schoolId];
+    if (schoolId != null) {
+      final aliases = await client
+          .from('schools')
+          .select('id')
+          .eq('canonical_id', schoolId);
+      schoolIds.addAll(aliases.map((row) => row['id'] as String));
+    }
     // Stable keyset pagination: no silent 1,000-row truncation in report lists.
     String? after;
     while (true) {
@@ -29,7 +53,7 @@ class SupabaseHazardRepository {
           .from('hazard_reports')
           .select(fields)
           .eq('is_demo', false);
-      if (schoolId != null) query = query.eq('school_id', schoolId);
+      if (schoolId != null) query = query.inFilter('school_id', schoolIds);
       if (reportId != null) query = query.eq('id', reportId);
       if (after != null) query = query.gt('id', after);
       final page = await query.order('id').limit(500);
@@ -197,15 +221,17 @@ class SupabaseHazardRepository {
     return await client.rpc('is_report_moderator') as bool;
   }
 
-  Future<List<ReportFlag>> fetchFlags(String schoolId) async {
+  Future<List<ReportFlag>> fetchFlags([String? schoolId]) async {
     if (client.auth.currentUser == null) return [];
-    final rows = await client
+    var query = client
         .from('report_flags')
         .select(
           'report_id,user_id,reason,created_at,reviewed_at,hazard_reports!inner(school_id)',
-        )
-        .eq('hazard_reports.school_id', schoolId)
-        .order('created_at', ascending: false);
+        );
+    if (schoolId != null) {
+      query = query.eq('hazard_reports.school_id', schoolId);
+    }
+    final rows = await query.order('created_at', ascending: false);
     return rows.map(ReportFlag.fromRow).toList();
   }
 
