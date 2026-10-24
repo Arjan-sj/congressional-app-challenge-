@@ -13,6 +13,10 @@ The nationwide map now uses indexed geographic queries, independent layer loadin
 clustering, and bounded server-side infrastructure caching. See
 [architecture, imports, deployment, and measured checks](docs/NATIONWIDE_MAP.md).
 
+Optional infrastructure failures now hide the five infrastructure selection chips
+when no valid current-area cache exists, while keeping Schools, Hazards and Retry
+available. See [Phase 6 map availability, caching and recovery](docs/MAP_INFRASTRUCTURE_AVAILABILITY.md).
+
 For isolated testing, see the [Phase 1 staging hazard workflow](docs/STAGING_HAZARD_WORKFLOW.md):
 separate environment settings, read-only previews, backed-up Storage API cleanup,
 and reproducible synthetic fixtures. Production resets are blocked.

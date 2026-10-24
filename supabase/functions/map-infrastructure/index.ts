@@ -1,5 +1,6 @@
 import { normalize } from './osm_normalize.ts';
 import { overpassProvider, OVERPASS_USER_AGENT } from './overpass_provider.ts';
+import { infrastructureFailure, infrastructurePayload, InfrastructureRequests, validInfrastructureCache, type Bounds } from './infrastructure_response.ts';
 // Public, read-only, geographically bounded fallback. No browser Overpass calls.
 // verify_jwt=false supports Supabase publishable keys. Shared DB cooldown bounds
 // upstream traffic even across Edge isolates and anonymous browser sessions.
@@ -7,8 +8,9 @@ const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const base = Deno.env.get('SUPABASE_URL')!;
 const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const headers = { apikey: secret, Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' };
+const requests = new InfrastructureRequests();
 async function db(path: string, body?: unknown, method = 'POST') {
-  const response = await fetch(`${base}/rest/v1/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(`${base}/rest/v1/${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal:AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error('Cache database unavailable');
   const text = await response.text();
   return text ? JSON.parse(text) : null;
@@ -29,19 +31,23 @@ Deno.serve(async request => {
     const coordinates = [p.min_lat,p.min_lon,p.max_lat,p.max_lon];
     if (!coordinates.every(v => typeof v === 'number' && Number.isFinite(v)) ||
         p.min_lat < -85 || p.max_lat > 85 || p.min_lon < -180 || p.max_lon > 180 ||
-        p.min_lat >= p.max_lat || p.min_lon >= p.max_lon || p.max_lat-p.min_lat > .08 || p.max_lon-p.min_lon > .08 || p.zoom < 15)
+        p.min_lat >= p.max_lat || p.min_lon >= p.max_lon || p.max_lat-p.min_lat > .08 || p.max_lon-p.min_lon > .08 || typeof p.zoom !== 'number' || !Number.isFinite(p.zoom) || p.zoom < 15)
       return reply({error:'Zoom in for a small infrastructure viewport'},400);
     const allowed = ['crossing','sidewalk','bikePath','bikeLane','walkingPath'];
+    if (!Array.isArray(p.categories) || p.categories.length>5 || !p.categories.every((c: unknown) => typeof c==='string' && allowed.includes(c)))
+      return reply({error:'Invalid infrastructure categories'},400);
     const categories = [...new Set<string>(p.categories ?? [])].filter(c => allowed.includes(c)).sort();
-    if (!categories.length) return reply({items:[]});
-    const bounds = [Math.floor(p.min_lat*100)/100,Math.floor(p.min_lon*100)/100,Math.ceil(p.max_lat*100)/100,Math.ceil(p.max_lon*100)/100];
+    if (!categories.length) return reply(infrastructurePayload([],coordinates as Bounds,Date.now()));
+    const bounds: Bounds = [Math.floor(p.min_lat*100)/100,Math.floor(p.min_lon*100)/100,Math.ceil(p.max_lat*100)/100,Math.ceil(p.max_lon*100)/100];
     const provider = overpassProvider(Deno.env.get('OVERPASS_URL'));
-    const cell = `osm-v2:${provider.host}:${bounds.join(':')}:${categories.join(',')}`;
+    const cell = `osm-v3:${provider.host}:${bounds.join(':')}:${categories.join(',')}`;
     const cached = await db(`map_provider_cache?cell=eq.${encodeURIComponent(cell)}&select=payload,expires_at`,undefined,'GET');
-    if (cached[0]?.payload && Date.parse(cached[0].expires_at)>Date.now()) return reply(cached[0].payload);
+    const validCache = validInfrastructureCache(cached[0],coordinates as Bounds,Date.now());
+    if (validCache) return reply(validCache);
+    const result = await requests.run(cell,async () => {
     // Both a regional lock and a global provider budget, not a public-proxy free-for-all.
     if (!await db('rpc/claim_map_provider',{cache_cell:cell}) || !await db('rpc/claim_map_provider',{cache_cell:provider.cooldownKey}))
-      return reply(cached[0]?.payload ?? {items:[],warning:'Infrastructure cooling down; retry in a minute.',failure:'rateLimited',retry_after:60},200,60);
+      return infrastructureFailure('rateLimited','Infrastructure cooling down; retry in a minute.',60);
     const bbox = bounds.join(',');
     const clauses: string[] = [];
     if (categories.includes('crossing')) clauses.push(`node[highway=crossing](${bbox});way[highway=footway][footway=crossing](${bbox});`);
@@ -52,19 +58,21 @@ Deno.serve(async request => {
       body:new URLSearchParams({data:`[out:json][timeout:15][maxsize:8388608];(${clauses.join('')});out tags geom;`}),signal:AbortSignal.timeout(18000)});
     if (!upstream.ok) {
       const retryHeader = upstream.headers.get('Retry-After');
-      const retry = Math.max(60, Number(retryHeader) || (retryHeader ? Math.ceil((Date.parse(retryHeader)-Date.now())/1000) : 120) || 120);
+      const retry = Math.min(3600, Math.max(60, Number(retryHeader) || (retryHeader ? Math.ceil((Date.parse(retryHeader)-Date.now())/1000) : 120) || 120));
       await db(`map_provider_cache?cell=eq.${encodeURIComponent(provider.cooldownKey)}`,{retry_at:new Date(Date.now()+retry*1000).toISOString()},'PATCH');
-      return reply({items:[],warning:upstream.status===429 ? 'Infrastructure rate limited. Retry later.' : `Infrastructure provider unavailable (${upstream.status}).`,failure:upstream.status===429 ? 'rateLimited' : 'server',retry_after:retry},200,retry);
+      return infrastructureFailure(upstream.status===429 ? 'rateLimited' : 'server',upstream.status===429 ? 'Infrastructure rate limited. Retry later.' : `Infrastructure provider unavailable (${upstream.status}).`,retry);
     }
     const raw = await upstream.text();
     if (raw.length>8388608) throw new Error('Infrastructure response too large');
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed.elements) || parsed.remark) throw new Error('Incomplete infrastructure response');
-    const payload = {items:normalize(parsed.elements,categories),source:'Overpass cached',provider:provider.host,fetched_at:new Date().toISOString()};
-    await db(`map_provider_cache?cell=eq.${encodeURIComponent(cell)}`,{payload,expires_at:new Date(Date.now()+86400000).toISOString()},'PATCH');
-    return reply(payload);
+    const payload = {...infrastructurePayload(normalize(parsed.elements,categories),bounds,Date.now()),provider:provider.host};
+    await db(`map_provider_cache?cell=eq.${encodeURIComponent(cell)}`,{payload,expires_at:payload.expires_at},'PATCH');
+    return payload;
+    });
+    return reply(result,200,'retry_after' in result ? result.retry_after : undefined);
   } catch (error) {
     console.error('map-infrastructure',error instanceof Error ? error.name : 'error');
-    return reply({items:[],warning:'Optional infrastructure unavailable. Schools and reports remain available.',failure:error instanceof Error && error.name==='TimeoutError' ? 'timeout' : 'server',retry_after:60},200,60);
+    return reply(infrastructureFailure(error instanceof Error && error.name==='TimeoutError' ? 'timeout' : 'server','Optional infrastructure unavailable. Schools and reports remain available.'),200,60);
   }
 });

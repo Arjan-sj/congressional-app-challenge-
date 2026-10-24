@@ -12,6 +12,7 @@ import '../data/pilot_school.dart';
 import '../models/geo_bounds.dart';
 import '../models/hazard_report.dart';
 import '../models/map_layer.dart';
+import '../models/infrastructure_availability.dart';
 import '../models/osm_infrastructure.dart';
 import '../models/safety_route.dart';
 import '../models/school.dart';
@@ -42,6 +43,8 @@ class ExploreScreen extends StatefulWidget {
     this.liveClient,
     this.showMapTextAlternative = false,
     this.enableKeyboardNavigation = false,
+    this.mapDataService,
+    this.tileProvider,
   });
 
   final List<HazardReport> reports;
@@ -52,6 +55,10 @@ class ExploreScreen extends StatefulWidget {
   final SupabaseClient? liveClient;
   final bool showMapTextAlternative;
   final bool enableKeyboardNavigation;
+
+  /// Inject a scheduler for deterministic integration tests. Explore owns it.
+  final MapDataService? mapDataService;
+  final TileProvider? tileProvider;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -105,6 +112,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   double _zoom = 15;
   bool _loadingSchools = false;
   bool _loadingInfrastructure = false;
+  InfrastructureStatus _infrastructureStatus = const InfrastructureStatus();
   bool _loadingRoutes = false;
   bool _findingLocation = false;
   bool _mapHasFocus = false;
@@ -116,12 +124,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.enableMapTiles && widget.liveClient != null) {
-      final data = _mapData = MapDataService.supabase(widget.liveClient!);
+    if (widget.mapDataService != null ||
+        widget.enableMapTiles && widget.liveClient != null) {
+      final data = _mapData =
+          widget.mapDataService ?? MapDataService.supabase(widget.liveClient!);
       data.schools.addListener(_schoolDataChanged);
       data.hazards.addListener(_hazardDataChanged);
       data.infrastructure.addListener(_infrastructureDataChanged);
-      _mapAuth = widget.liveClient!.auth.onAuthStateChange.listen((_) {
+      _mapAuth = widget.liveClient?.auth.onAuthStateChange.listen((_) {
         data.invalidateHazards(clear: true);
       });
       _hazardRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -206,12 +216,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
       final data = _mapData!;
       _loadingInfrastructure = data.infrastructure.loading;
       _infrastructureError = data.infrastructure.error;
-      if (data.bounds != null) {
+      _infrastructureStatus = data.infrastructure.infrastructureStatus;
+      if (_infrastructureStatus.hasCurrentData &&
+          data.infrastructure.bounds != null) {
         _infrastructure = InfrastructureSnapshot(
-          bounds: data.bounds!,
+          bounds: data.infrastructure.bounds!,
           features: data.infrastructure.data.features,
-          fetchedAt: DateTime.now(),
+          fetchedAt: data.infrastructure.fetchedAt!,
+          coverage: _infrastructureStatus.coverage,
         );
+      } else {
+        _infrastructure = null;
       }
     });
   }
@@ -1243,7 +1258,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           loading: _loadingInfrastructure,
                           zoom: _zoom,
                           error: _infrastructureError,
-                          onRetry: _infrastructureError == null
+                          infrastructureStatus: _infrastructureStatus,
+                          canRequestInfrastructure:
+                              _mapData?.infrastructureViewportEligible ?? false,
+                          onRetry: _mapData == null
                               ? null
                               : _retryInfrastructure,
                           onLayerChanged: (layer, visible) {
@@ -1421,6 +1439,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                     children: [
                                       if (widget.enableMapTiles)
                                         TileLayer(
+                                          tileProvider: widget.tileProvider,
                                           key: ValueKey(
                                             'tiles-$_tileGeneration',
                                           ),

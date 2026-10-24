@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/geo_bounds.dart';
 import '../models/hazard_report.dart';
 import '../models/map_layer.dart';
+import '../models/infrastructure_availability.dart';
 import '../models/osm_infrastructure.dart';
 import '../models/school.dart';
 import 'hazard_codec.dart';
@@ -46,11 +47,17 @@ class MapDataset {
     this.total = 0,
     this.clustered = false,
     this.features = const [],
+    this.coverage = InfrastructureCoverage.unknown,
+    this.fetchedAt,
+    this.expiresAt,
   });
   final List<Map<String, dynamic>> items;
   final int total;
   final bool clustered;
   final List<OsmMapFeature> features;
+  final InfrastructureCoverage coverage;
+  final DateTime? fetchedAt;
+  final DateTime? expiresAt;
   static const empty = MapDataset([]);
 }
 
@@ -61,15 +68,24 @@ class MapSourceState extends ChangeNotifier {
   String? error;
   MapFailure? failure;
   GeoBounds? bounds;
+  DateTime? fetchedAt;
+  InfrastructureStatus infrastructureStatus = const InfrastructureStatus();
   void changed() => notifyListeners();
 }
 
 class _CacheEntry {
-  _CacheEntry(this.bounds, this.key, this.data, this.time);
+  _CacheEntry(
+    this.bounds,
+    this.key,
+    this.data,
+    this.time, {
+    this.categories = const {},
+  });
   final GeoBounds bounds;
   final String key;
   final MapDataset data;
   final DateTime time;
+  final Set<String> categories;
 }
 
 /// Central scheduler: one running + one latest viewport per source, no pan backlog.
@@ -80,6 +96,8 @@ class MapDataService {
     this.debounce = const Duration(milliseconds: 300),
     Future<dynamic> Function(Map<String, dynamic>)? infrastructureFallback,
     DateTime Function()? now,
+    this.rpcTimeout = const Duration(seconds: 18),
+    this.fallbackTimeout = const Duration(seconds: 25),
   }) : _fallback = infrastructureFallback,
        _now = now ?? DateTime.now;
 
@@ -95,12 +113,23 @@ class MapDataService {
   final Future<dynamic> Function(Map<String, dynamic>)? _fallback;
   final DateTime Function() _now;
   final Duration debounce;
+  final Duration rpcTimeout;
+  final Duration fallbackTimeout;
   final schools = MapSourceState();
   final hazards = MapSourceState();
   final infrastructure = MapSourceState();
   final List<_CacheEntry> _cache = [];
   final Set<String> _running = {};
   final Map<String, DateTime> _cooldown = {};
+  final Map<String, MapFailure> _cooldownFailure = {};
+  GeoBounds? _infrastructureRequestBounds;
+  String? _infrastructureRequestKey;
+  bool _infrastructureFailed = false;
+  Timer? _infrastructureCooldownTimer;
+  Timer? _infrastructureExpiryTimer;
+  DateTime? _infrastructureExpiresAt;
+  final Set<String> _failedInfrastructureScopes = {};
+  bool _infrastructureRecoveryProbe = false;
   final Stopwatch _startup = Stopwatch()..start();
   final List<String> recentErrors = [];
   final Map<String, int> durationsMs = {};
@@ -127,35 +156,163 @@ class MapDataService {
   };
 
   void viewport(GeoBounds next, double nextZoom, Set<MapLayer> layers) {
+    if (_disposed) return;
     bounds = next;
     zoom = nextZoom;
     visible = Set.of(layers);
     _generation++; // Invalidate immediately, including while the debounce runs.
+    _reconcileInfrastructure();
     _timer?.cancel();
     _timer = Timer(debounce, () {
-      _load('schools');
-      _load('hazards');
-      // Optional data gets a later event-loop turn, never gates primary layers.
-      scheduleMicrotask(() => _load('infrastructure'));
+      _drain();
     });
   }
 
   Set<String> get categories => {
-    if (visible.contains(MapLayer.crossings)) 'crossing',
-    if (visible.contains(MapLayer.sidewalks)) 'sidewalk',
-    if (visible.contains(MapLayer.walkingPaths) && zoom > 16) 'walkingPath',
-    if (visible.contains(MapLayer.bikePaths)) 'bikePath',
-    if (visible.contains(MapLayer.bikeLanes)) 'bikeLane',
+    if (_infrastructureRecoveryProbe || visible.contains(MapLayer.crossings))
+      'crossing',
+    if (_infrastructureRecoveryProbe || visible.contains(MapLayer.sidewalks))
+      'sidewalk',
+    if ((_infrastructureRecoveryProbe ||
+            visible.contains(MapLayer.walkingPaths)) &&
+        zoom > 16)
+      'walkingPath',
+    if (_infrastructureRecoveryProbe || visible.contains(MapLayer.bikePaths))
+      'bikePath',
+    if (_infrastructureRecoveryProbe || visible.contains(MapLayer.bikeLanes))
+      'bikeLane',
   };
+
+  bool get infrastructureRequestEligible =>
+      bounds != null && _enabled('infrastructure');
+  bool get infrastructureViewportEligible =>
+      bounds != null &&
+      zoom >= 15 &&
+      bounds!.expanded(.15).latitudeSpan <= .08 &&
+      bounds!.expanded(.15).longitudeSpan <= .08 &&
+      !bounds!.crossesAntimeridian;
+
+  _CacheEntry? _cached(String source) {
+    final currentBounds = bounds;
+    if (currentBounds == null) return null;
+    final key = _key(source);
+    final ttl = source == 'hazards'
+        ? const Duration(seconds: 30)
+        : const Duration(hours: 24);
+    for (final entry in _cache.reversed) {
+      final matches =
+          entry.key == key ||
+          source == 'infrastructure' &&
+              categories.every(entry.categories.contains) &&
+              (entry.key.contains(':full:') || !key.contains(':full:'));
+      if (matches &&
+          entry.bounds.containsBounds(currentBounds) &&
+          _now().difference(entry.time) < ttl &&
+          (entry.data.expiresAt == null ||
+              entry.data.expiresAt!.isAfter(_now()))) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  void _reconcileInfrastructure({bool networkSuccess = false}) {
+    if (_disposed) return;
+    final previousData = infrastructure.data;
+    final previousBounds = infrastructure.bounds;
+    final previousStatus = infrastructure.infrastructureStatus;
+    final cached = infrastructureRequestEligible
+        ? _cached('infrastructure')
+        : null;
+    if (cached != null) {
+      final ttlEnd = cached.time.add(const Duration(hours: 24));
+      final expiry =
+          cached.data.expiresAt != null &&
+              cached.data.expiresAt!.isBefore(ttlEnd)
+          ? cached.data.expiresAt!
+          : ttlEnd;
+      if (_infrastructureExpiresAt != expiry) {
+        _infrastructureExpiryTimer?.cancel();
+        _infrastructureExpiresAt = expiry;
+        _infrastructureExpiryTimer = Timer(expiry.difference(_now()), () {
+          _infrastructureExpiresAt = null;
+          if (!_disposed) {
+            _reconcileInfrastructure();
+            _drain();
+          }
+        });
+      }
+    } else {
+      _infrastructureExpiryTimer?.cancel();
+      _infrastructureExpiresAt = null;
+    }
+    if (cached != null) {
+      infrastructure.data = cached.data;
+      infrastructure.bounds = cached.bounds;
+      infrastructure.fetchedAt = cached.data.fetchedAt ?? cached.time;
+      infrastructure.hasData = true;
+    } else {
+      // Never relabel features from the preceding viewport as current data.
+      infrastructure.data = MapDataset.empty;
+      infrastructure.bounds = null;
+      infrastructure.fetchedAt = null;
+      infrastructure.hasData = false;
+    }
+    final loading =
+        _running.contains('infrastructure') &&
+        _infrastructureRequestKey == _key('infrastructure') &&
+        bounds != null &&
+        _infrastructureRequestBounds?.containsBounds(bounds!) == true &&
+        infrastructureRequestEligible;
+    infrastructure.loading = loading;
+    final retryAt = _cooldown['infrastructure'];
+    infrastructure.infrastructureStatus = InfrastructureStatus(
+      availability: loading
+          ? InfrastructureAvailability.loading
+          : cached != null
+          ? networkSuccess
+                ? cached.data.features.isEmpty
+                      ? InfrastructureAvailability.empty
+                      : InfrastructureAvailability.available
+                : InfrastructureAvailability.cached
+          : _infrastructureFailed
+          ? InfrastructureAvailability.unavailable
+          : InfrastructureAvailability.notRequested,
+      coverage:
+          cached?.data.coverage ??
+          (_infrastructureFailed
+              ? InfrastructureCoverage.unavailable
+              : InfrastructureCoverage.unknown),
+      hasValidCache: cached != null,
+      isEmpty: cached?.data.features.isEmpty == true,
+      lastAttemptFailed: _infrastructureFailed,
+      retryAt: retryAt?.isAfter(_now()) == true ? retryAt : null,
+    );
+    final currentStatus = infrastructure.infrastructureStatus;
+    if (!identical(previousData, infrastructure.data) ||
+        !identical(previousBounds, infrastructure.bounds) ||
+        previousStatus.availability != currentStatus.availability ||
+        previousStatus.coverage != currentStatus.coverage ||
+        previousStatus.hasValidCache != currentStatus.hasValidCache ||
+        previousStatus.lastAttemptFailed != currentStatus.lastAttemptFailed ||
+        previousStatus.retryAt != currentStatus.retryAt ||
+        previousStatus.isEmpty != currentStatus.isEmpty) {
+      infrastructure.changed();
+    }
+  }
+
+  void _drain() {
+    if (_disposed || _timer?.isActive == true) return;
+    _load('schools');
+    _load('hazards');
+    // Optional work cannot occupy both primary-layer slots.
+    _load('infrastructure');
+  }
+
   bool _enabled(String source) => switch (source) {
     'schools' => visible.contains(MapLayer.schools),
     'hazards' => visible.contains(MapLayer.hazards),
-    _ =>
-      zoom >= 15 &&
-          categories.isNotEmpty &&
-          bounds!.latitudeSpan < .12 &&
-          bounds!.longitudeSpan < .17 &&
-          !bounds!.crossesAntimeridian,
+    _ => infrastructureViewportEligible && categories.isNotEmpty,
   };
   String _key(String source) =>
       '$source:v1:${source == 'infrastructure' ? (categories.toList()..sort()).join(',') : ''}:'
@@ -171,40 +328,60 @@ class MapDataService {
         bounds == null ||
         !_enabled(source) ||
         _running.contains(source) ||
-        _running.length >= 2) {
+        (source == 'infrastructure'
+            ? _running.length >= 2
+            : _running.where((s) => s != 'infrastructure').length >= 2)) {
       return;
     }
     final requestBounds = bounds!;
     final key = _key(source);
+    final scope = '$key:${requestBounds.toString()}';
     final version = _generation;
     final state = _state(source);
-    final ttl = source == 'hazards'
-        ? const Duration(seconds: 30)
-        : const Duration(hours: 24);
     lookups++;
     if (!force) {
-      for (final cached in _cache.reversed) {
-        if (cached.key == key &&
-            cached.bounds.containsBounds(requestBounds) &&
-            _now().difference(cached.time) < ttl) {
-          cacheHits++;
-          state.bounds = cached.bounds;
-          state.hasData = true;
-          state.data = cached.data;
-          state.loading = false;
-          state.error = null;
-          state.failure = null;
-          state.changed();
+      final cached = _cached(source);
+      if (cached != null) {
+        cacheHits++;
+        if (source == 'infrastructure' &&
+            identical(state.data, cached.data) &&
+            state.hasData &&
+            !state.loading) {
           return;
         }
+        state.bounds = cached.bounds;
+        state.hasData = true;
+        state.data = cached.data;
+        state.loading = false;
+        state.error = null;
+        state.failure = null;
+        if (source == 'infrastructure') {
+          _reconcileInfrastructure();
+        } else {
+          state.changed();
+        }
+        return;
       }
+    }
+    if (source == 'infrastructure' &&
+        !force &&
+        _failedInfrastructureScopes.contains(scope)) {
+      return;
     }
     if (_cooldown[source]?.isAfter(_now()) == true) return;
     _running.add(source);
+    if (source == 'infrastructure') {
+      _infrastructureRequestBounds = requestBounds;
+      _infrastructureRequestKey = key;
+    }
     state.loading = true;
     state.error = null;
     state.failure = null;
-    state.changed();
+    if (source == 'infrastructure') {
+      _reconcileInfrastructure();
+    } else {
+      state.changed();
+    }
     final watch = Stopwatch()..start();
     // Modest geographic buffer only; no raster tile prefetching.
     final queryBounds = requestBounds.expanded(.15);
@@ -213,14 +390,35 @@ class MapDataService {
     if (source == 'hazards') params['hazard_kind'] = hazardKind;
     if (source == 'infrastructure') params['categories'] = categories.toList();
     try {
-      final data = await _fetch(source, params);
+      final data = await _fetch(
+        source,
+        params,
+        isCurrent: () => version == _generation && !_disposed,
+      );
       if (_disposed) return;
-      _cache.add(_CacheEntry(queryBounds, key, data, _now()));
+      _cache.add(
+        _CacheEntry(
+          queryBounds,
+          key,
+          data,
+          _now(),
+          categories: source == 'infrastructure'
+              ? Set<String>.from(params['categories'] as List)
+              : const {},
+        ),
+      );
       if (_cache.length > 96) _cache.removeAt(0);
       if (version == _generation) {
         state.bounds = queryBounds;
         state.hasData = true;
         state.data = data;
+        state.fetchedAt = data.fetchedAt ?? _now();
+        _cooldown.remove(source);
+        _cooldownFailure.remove(source);
+        if (source == 'infrastructure') {
+          _infrastructureFailed = false;
+          _failedInfrastructureScopes.remove(scope);
+        }
         firstDataMs.putIfAbsent(source, () => _startup.elapsedMilliseconds);
       }
     } catch (error) {
@@ -234,10 +432,14 @@ class MapDataService {
           ? MapFailure.connectionOrCors
           : error is FormatException || error is TypeError
           ? MapFailure.invalidResponse
-          : error is PostgrestException && error.code == '429'
+          : error is PostgrestException && error.code == '429' ||
+                error is FunctionException && error.status == 429
           ? MapFailure.rateLimited
           : error is PostgrestException &&
                 const {'PGRST202', '42883', '42P01'}.contains(error.code)
+          ? MapFailure.configuration
+          : error is FunctionException &&
+                const {401, 403, 404}.contains(error.status)
           ? MapFailure.configuration
           : error is PostgrestException &&
                 const {'500', '502', '503', '504'}.contains(error.code)
@@ -255,38 +457,72 @@ class MapDataService {
       final message = '$source $detail.';
       recentErrors.add(message);
       if (recentErrors.length > 5) recentErrors.removeAt(0);
-      _cooldown[source] = _now().add(
-        error is MapDataException
-            ? error.retryAfter
-            : failure == MapFailure.rateLimited
-            ? const Duration(seconds: 60)
-            : const Duration(seconds: 30),
-      );
+      final delay = error is MapDataException
+          ? error.retryAfter
+          : failure == MapFailure.rateLimited
+          ? const Duration(seconds: 60)
+          : const Duration(seconds: 30);
+      // Stale transport failures do not block an unrelated new viewport.
+      if (version == _generation || failure == MapFailure.rateLimited) {
+        _cooldown[source] = _now().add(
+          Duration(milliseconds: delay.inMilliseconds.clamp(1000, 3600000)),
+        );
+        _cooldownFailure[source] = failure;
+      }
       if (version == _generation) {
         state.error = message;
         state.failure = failure;
+        if (source == 'infrastructure') {
+          _infrastructureFailed = true;
+          _failedInfrastructureScopes.add(scope);
+          if (_failedInfrastructureScopes.length > 64) {
+            _failedInfrastructureScopes.remove(
+              _failedInfrastructureScopes.first,
+            );
+          }
+        }
+      }
+      if (source == 'infrastructure' && _cooldown[source] != null) {
+        if (failure == MapFailure.rateLimited) {
+          _infrastructureFailed = true;
+          state.error = message;
+          state.failure = failure;
+        }
+        _infrastructureCooldownTimer?.cancel();
+        _infrastructureCooldownTimer = Timer(
+          _cooldown[source]!.difference(_now()),
+          () {
+            if (!_disposed) _reconcileInfrastructure(); // Enable retry, no automatic retry loop.
+          },
+        );
       }
     } finally {
       _running.remove(source);
+      if (source == 'infrastructure') _infrastructureRecoveryProbe = false;
       durationsMs[source] = watch.elapsedMilliseconds;
       if (!_disposed) {
         state.loading = false;
-        state.changed();
-        _load('schools');
-        _load('hazards');
-        _load('infrastructure');
+        if (source == 'infrastructure') {
+          _reconcileInfrastructure(
+            networkSuccess: version == _generation && !_infrastructureFailed,
+          );
+        } else {
+          state.changed();
+        }
+        _drain();
       }
     }
   }
 
-  Future<dynamic> _call(String name, Map<String, dynamic> params) async {
+  Future<dynamic> _call(
+    String name,
+    Map<String, dynamic> params, {
+    bool Function()? isCurrent,
+  }) async {
     // Idempotent reads: one bounded retry for transient server/transport errors.
     for (var attempt = 0; ; attempt++) {
       try {
-        final value = await rpc(
-          name,
-          params,
-        ).timeout(const Duration(seconds: 18));
+        final value = await rpc(name, params).timeout(rpcTimeout);
         completed++;
         if (kDebugMode) responseBytes += utf8.encode(jsonEncode(value)).length;
         return value;
@@ -305,20 +541,41 @@ class MapDataService {
                   'PGRST001',
                   'PGRST002',
                 }.contains(error.code);
-        if (!retryable || attempt >= 1) rethrow;
+        if (!retryable ||
+            attempt >= 1 ||
+            isCurrent?.call() == false ||
+            _disposed) {
+          rethrow;
+        }
         await Future<void>.delayed(
           Duration(milliseconds: 400 + _now().millisecond),
         );
+        if (isCurrent?.call() == false || _disposed) rethrow;
       }
     }
   }
 
-  Future<MapDataset> _fetch(String source, Map<String, dynamic> params) async {
+  Future<MapDataset> _fetch(
+    String source,
+    Map<String, dynamic> params, {
+    bool Function()? isCurrent,
+  }) async {
     final items = <Map<String, dynamic>>[];
     bool clustered = false;
     int total = 0;
+    bool infrastructureTruncated = false;
     while (true) {
-      final raw = await _call('${source}_in_view', params);
+      if (isCurrent?.call() == false || _disposed) {
+        throw const MapDataException(
+          MapFailure.unavailable,
+          'Viewport changed',
+        );
+      }
+      final raw = await _call(
+        '${source}_in_view',
+        params,
+        isCurrent: isCurrent,
+      );
       final parsing = Stopwatch()..start();
       final rows = source == 'infrastructure'
           ? raw as List
@@ -337,21 +594,40 @@ class MapDataService {
       }
       parsingMicros += parsing.elapsedMicroseconds;
       if (source == 'schools' || clustered || rows.length < 500) break;
+      if (source == 'infrastructure' && items.length >= 5000) {
+        infrastructureTruncated = true;
+        break;
+      }
+      if (items.last['id'] is! String ||
+          params['after_id'] == items.last['id']) {
+        throw const FormatException('Map pagination did not advance');
+      }
       params['after_id'] = items.last['id'];
     }
+    InfrastructureCoverage coverage = infrastructureTruncated
+        ? InfrastructureCoverage.partial
+        : InfrastructureCoverage.unknown;
+    DateTime? fetchedAt;
+    DateTime? expiresAt;
     if (source == 'infrastructure' && items.isEmpty && _fallback != null) {
-      final raw = await _fallback(params).timeout(const Duration(seconds: 25));
+      if (isCurrent?.call() == false || _disposed) {
+        throw const MapDataException(
+          MapFailure.unavailable,
+          'Viewport changed',
+        );
+      }
+      final raw = await _fallback(params).timeout(fallbackTimeout);
       completed++;
       if (kDebugMode) responseBytes += utf8.encode(jsonEncode(raw)).length;
       if (raw is! Map || raw['items'] is! List) {
         throw const FormatException('Invalid infrastructure response');
       }
       items.addAll(
-        (raw['items'] as List).map(
-          (row) => Map<String, dynamic>.from(row as Map),
-        ),
+        (raw['items'] as List)
+            .take(5000)
+            .map((row) => Map<String, dynamic>.from(row as Map)),
       );
-      if (raw['warning'] != null) {
+      if (raw['warning'] != null || raw['coverage'] == 'unavailable') {
         throw MapDataException(
           MapFailure.values
                   .where((f) => f.name == raw['failure'])
@@ -361,6 +637,62 @@ class MapDataService {
           retryAfter: Duration(
             seconds: (raw['retry_after'] as num?)?.toInt() ?? 60,
           ),
+        );
+      }
+      coverage =
+          InfrastructureCoverage.values
+              .where(
+                (c) =>
+                    c.name == raw['coverage'] &&
+                    c != InfrastructureCoverage.unavailable,
+              )
+              .firstOrNull ??
+          InfrastructureCoverage.unknown;
+      if ((raw['items'] as List).length > 5000) {
+        coverage = InfrastructureCoverage.partial;
+      }
+      fetchedAt = DateTime.tryParse(raw['fetched_at']?.toString() ?? '');
+      expiresAt =
+          DateTime.tryParse(raw['expires_at']?.toString() ?? '') ??
+          fetchedAt?.add(const Duration(hours: 24));
+      if (fetchedAt != null &&
+          (expiresAt == null ||
+              expiresAt.isAfter(fetchedAt.add(const Duration(hours: 24))))) {
+        expiresAt = fetchedAt.add(const Duration(hours: 24));
+      }
+      if (raw['fetched_at'] != null && fetchedAt == null ||
+          raw['expires_at'] != null &&
+              DateTime.tryParse(raw['expires_at'].toString()) == null ||
+          fetchedAt?.isAfter(_now().add(const Duration(minutes: 5))) == true ||
+          raw['bounds'] != null && raw['bounds'] is! List) {
+        throw const FormatException('Invalid infrastructure cache metadata');
+      }
+      if (raw['bounds'] case final List box) {
+        if (box.length != 4 ||
+            box.any((v) => v is! num || !v.isFinite) ||
+            (box[0] as num) > (box[2] as num) ||
+            !GeoBounds(
+              south: (box[0] as num).toDouble(),
+              west: (box[1] as num).toDouble(),
+              north: (box[2] as num).toDouble(),
+              east: (box[3] as num).toDouble(),
+            ).containsBounds(
+              GeoBounds(
+                south: params['min_lat'] as double,
+                west: params['min_lon'] as double,
+                north: params['max_lat'] as double,
+                east: params['max_lon'] as double,
+              ),
+            )) {
+          throw const FormatException(
+            'Infrastructure cache does not cover the requested area',
+          );
+        }
+      }
+      if (expiresAt != null && !expiresAt.isAfter(_now())) {
+        throw const MapDataException(
+          MapFailure.unavailable,
+          'Expired infrastructure cache',
         );
       }
     }
@@ -374,6 +706,9 @@ class MapDataService {
         dataset.items,
         total: items.length,
         features: List.unmodifiable(infrastructureFeatures(dataset)),
+        coverage: coverage,
+        fetchedAt: fetchedAt,
+        expiresAt: expiresAt,
       );
     }
     return dataset;
@@ -463,11 +798,18 @@ class MapDataService {
   }
 
   void retry(String source) {
-    if (_state(source).failure == MapFailure.rateLimited &&
+    if ((source == 'infrastructure' ||
+            _cooldownFailure[source] == MapFailure.rateLimited) &&
         _cooldown[source]?.isAfter(_now()) == true) {
       return;
     }
     _cooldown.remove(source);
+    if (source == 'infrastructure') {
+      // Recovery can probe availability even if all remembered preferences are
+      // off. Hiding controls must never make the Retry action a dead end.
+      if (categories.isEmpty) _infrastructureRecoveryProbe = true;
+      _reconcileInfrastructure();
+    }
     _load(source, force: true);
   }
 
@@ -569,6 +911,8 @@ class MapDataService {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _infrastructureCooldownTimer?.cancel();
+    _infrastructureExpiryTimer?.cancel();
     schools.dispose();
     hazards.dispose();
     infrastructure.dispose();

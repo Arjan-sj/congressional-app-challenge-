@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:congressional_app/models/geo_bounds.dart';
 import 'package:congressional_app/models/osm_infrastructure.dart';
@@ -211,5 +212,119 @@ void main() {
       ).fetch(const GeoBounds(south: 30, west: -100, north: 50, east: -70)),
       throwsA(isA<OverpassException>()),
     );
+  });
+
+  test(
+    'forced requests share one in-flight fetch and release it after completion',
+    () async {
+      final pending = Completer<http.Response>();
+      var calls = 0;
+      final service = OverpassService(
+        client: MockClient((_) {
+          calls++;
+          return pending.future;
+        }),
+        chunkRows: 1,
+        chunkColumns: 1,
+      );
+      final first = service.fetch(bounds);
+      final second = service.fetch(bounds, forceRefresh: true);
+      pending.complete(http.Response(jsonEncode({'elements': []}), 200));
+      await Future.wait([first, second]);
+      expect(calls, 1);
+      await service.fetch(bounds, forceRefresh: true);
+      expect(calls, 2);
+    },
+  );
+  test('rate-limit cooldown respects numeric and HTTP-date headers even for forced retries', () async {
+    for (final header in ['60', 'Sat, 24 Oct 2026 12:01:00 GMT']) {
+      var now = DateTime.utc(2026, 10, 24, 12);
+      var calls = 0;
+      final service = OverpassService(
+        now: () => now,
+        client: MockClient((_) async {
+          calls++;
+          return http.Response('busy', 429, headers: {'retry-after': header});
+        }),
+        chunkRows: 1,
+        chunkColumns: 1,
+        maxRetries: 0,
+      );
+      await expectLater(
+        service.fetch(bounds),
+        throwsA(
+          isA<OverpassException>().having(
+            (e) => e.retryAfter,
+            'retry delay',
+            const Duration(seconds: 60),
+          ),
+        ),
+      );
+      await expectLater(
+        service.fetch(bounds, forceRefresh: true),
+        throwsA(isA<OverpassException>()),
+      );
+      expect(calls, 1);
+      now = now.add(const Duration(seconds: 61));
+      await expectLater(
+        service.fetch(bounds, forceRefresh: true),
+        throwsA(isA<OverpassException>()),
+      );
+      expect(calls, 2);
+    }
+  });
+  test('missing elements and Overpass timeout remarks cannot look like successful empty data', () async {
+    for (final body in [
+      {'remark': 'runtime timeout', 'elements': []},
+      <String, dynamic>{},
+    ]) {
+      final service = OverpassService(
+        client: MockClient((_) async => http.Response(jsonEncode(body), 200)),
+        chunkRows: 1,
+        chunkColumns: 1,
+        maxRetries: 0,
+      );
+      await expectLater(
+        service.fetch(bounds),
+        throwsA(
+          isA<OverpassException>().having(
+            (e) => e.failure,
+            'failure',
+            OverpassFailure.malformed,
+          ),
+        ),
+      );
+    }
+  });
+  test('different small viewports sharing a rounded cell do not share unrelated pending requests', () async {
+    final pending = Completer<http.Response>();
+    var calls = 0;
+    final service = OverpassService(
+      client: MockClient((_) {
+        calls++;
+        return pending.future;
+      }),
+      chunkRows: 1,
+      chunkColumns: 1,
+    );
+    final a = service.fetch(
+      const GeoBounds(
+        south: 42.001,
+        west: -88.119,
+        north: 42.002,
+        east: -88.118,
+      ),
+    );
+    final b = service.fetch(
+      const GeoBounds(
+        south: 42.006,
+        west: -88.114,
+        north: 42.007,
+        east: -88.113,
+      ),
+    );
+    pending.complete(http.Response(jsonEncode({'elements': []}), 200));
+    await Future.wait([a, b]);
+    expect(calls, 2);
   });
 }

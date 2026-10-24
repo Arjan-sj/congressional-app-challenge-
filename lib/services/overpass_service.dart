@@ -3,18 +3,25 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/geo_bounds.dart';
 import '../models/osm_infrastructure.dart';
+import '../models/infrastructure_availability.dart';
 
 enum OverpassFailure { invalidBounds, rateLimited, unavailable, malformed }
 
 class OverpassException implements Exception {
-  const OverpassException(this.failure, this.message);
+  const OverpassException(
+    this.failure,
+    this.message, {
+    this.retryAfter = const Duration(seconds: 30),
+  });
 
   final OverpassFailure failure;
   final String message;
+  final Duration retryAfter;
 
   @override
   String toString() => message;
@@ -32,12 +39,15 @@ class OverpassService {
     this.chunkColumns = 2,
     this.maxConcurrentRequests = 2,
     this.maxRetries = 1,
+    DateTime Function()? now,
   }) : _client = client ?? http.Client(),
        _ownsClient = client == null,
+       _now = now ?? DateTime.now,
        assert(chunkRows > 0),
        assert(chunkColumns > 0),
        assert(maxConcurrentRequests > 0),
        assert(maxRetries >= 0),
+       assert(maxCacheEntries > 0),
        endpoints = List.unmodifiable(
          _resolveEndpoints(endpoint, fallbackEndpoints),
        );
@@ -52,6 +62,9 @@ class OverpassService {
   final int chunkColumns;
   final int maxConcurrentRequests;
   final int maxRetries;
+  final DateTime Function() _now;
+  DateTime? _retryAt;
+  OverpassException? _rateLimit;
   final Map<String, InfrastructureSnapshot> _cache = {};
   final Map<String, Future<InfrastructureSnapshot>> _inFlight = {};
 
@@ -90,7 +103,19 @@ class OverpassService {
     )?
     onProgress,
   }) {
-    if (visibleBounds.latitudeSpan > .18 || visibleBounds.longitudeSpan > .24) {
+    if (![
+          visibleBounds.south,
+          visibleBounds.west,
+          visibleBounds.north,
+          visibleBounds.east,
+        ].every((v) => v.isFinite) ||
+        visibleBounds.south < -90 ||
+        visibleBounds.north > 90 ||
+        visibleBounds.west < -180 ||
+        visibleBounds.east > 180 ||
+        visibleBounds.crossesAntimeridian ||
+        visibleBounds.latitudeSpan > .18 ||
+        visibleBounds.longitudeSpan > .24) {
       throw const OverpassException(
         OverpassFailure.invalidBounds,
         'Zoom in farther to load nearby infrastructure.',
@@ -98,8 +123,8 @@ class OverpassService {
     }
 
     final queryBounds = visibleBounds.expanded(.2);
-    final now = DateTime.now();
-    if (!forceRefresh) {
+    final now = _now();
+    if (!forceRefresh || _retryAt?.isAfter(now) == true) {
       for (final snapshot in _cache.values) {
         if (snapshot.bounds.containsBounds(visibleBounds) &&
             now.difference(snapshot.fetchedAt) < cacheTtl) {
@@ -107,13 +132,26 @@ class OverpassService {
         }
       }
     }
+    if (_retryAt?.isAfter(now) == true) return Future.error(_rateLimit!);
 
-    final key = queryBounds.cacheKey;
+    // Exact coverage, rather than rounded cells shared by different viewports.
+    final key = queryBounds.toString();
     final existingRequest = _inFlight[key];
-    if (!forceRefresh && existingRequest != null) return existingRequest;
-    final request = _fetchRemote(queryBounds, onProgress: onProgress);
-    _inFlight[key] = request;
-    return request.whenComplete(() => _inFlight.remove(key));
+    if (existingRequest != null) return existingRequest;
+    final request = _fetchRemote(queryBounds, onProgress: onProgress)
+        .catchError((Object error) {
+          if (error is OverpassException &&
+              error.failure == OverpassFailure.rateLimited) {
+            _rateLimit = error;
+            _retryAt = _now().add(error.retryAfter);
+          }
+          throw error;
+        });
+    final tracked = request.whenComplete(() {
+      _inFlight.remove(key);
+    });
+    _inFlight[key] = tracked;
+    return tracked;
   }
 
   Future<InfrastructureSnapshot> _fetchRemote(
@@ -150,7 +188,10 @@ class OverpassService {
             InfrastructureSnapshot(
               bounds: bounds,
               features: List.unmodifiable(featuresById.values),
-              fetchedAt: DateTime.now(),
+              fetchedAt: _now(),
+              coverage: completedChunks == chunks.length
+                  ? InfrastructureCoverage.complete
+                  : InfrastructureCoverage.partial,
             ),
             completedChunks,
             chunks.length,
@@ -183,9 +224,10 @@ class OverpassService {
     final snapshot = InfrastructureSnapshot(
       bounds: bounds,
       features: List.unmodifiable(featuresById.values),
-      fetchedAt: DateTime.now(),
+      fetchedAt: _now(),
+      coverage: InfrastructureCoverage.complete,
     );
-    _remember(bounds.cacheKey, snapshot);
+    _remember(bounds.toString(), snapshot);
     return snapshot;
   }
 
@@ -227,9 +269,24 @@ class OverpassService {
         .timeout(requestTimeout);
 
     if (response.statusCode == 429) {
-      throw const OverpassException(
+      final header = response.headers['retry-after'];
+      var seconds = int.tryParse(header ?? '');
+      if (seconds == null && header != null) {
+        try {
+          final deadline = DateFormat(
+            'EEE, dd MMM yyyy HH:mm:ss',
+            'en_US',
+          ).parseUtc(header.replaceFirst(RegExp(r'\sGMT$'), ''));
+          seconds = deadline.difference(_now()).inSeconds;
+        } on FormatException {
+          /* Use the bounded default for invalid headers. */
+        }
+      }
+      final retrySeconds = (seconds ?? 30).clamp(1, 3600);
+      throw OverpassException(
         OverpassFailure.rateLimited,
-        'OpenStreetMap infrastructure is busy. Wait about 30 seconds, then retry.',
+        'OpenStreetMap infrastructure is busy. Wait $retrySeconds seconds, then retry.',
+        retryAfter: Duration(seconds: retrySeconds),
       );
     }
     if (response.statusCode == 504 || response.statusCode >= 500) {
@@ -247,7 +304,10 @@ class OverpassService {
 
     try {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final elements = json['elements'] as List<dynamic>? ?? const [];
+      if (json['elements'] is! List || json['remark'] != null) {
+        throw const FormatException('Incomplete infrastructure response');
+      }
+      final elements = json['elements'] as List<dynamic>;
       final features = <OsmMapFeature>[];
       for (final raw in elements.whereType<Map<String, dynamic>>()) {
         features.addAll(_decodeElement(raw));

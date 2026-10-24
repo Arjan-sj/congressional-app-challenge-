@@ -2,6 +2,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'geo_bounds.dart';
 import 'map_layer.dart';
+import 'infrastructure_availability.dart';
 
 enum InfrastructureType {
   school(MapLayer.schools),
@@ -49,11 +50,13 @@ class InfrastructureSnapshot {
     required this.bounds,
     required this.features,
     required this.fetchedAt,
+    this.coverage = InfrastructureCoverage.unknown,
   });
 
   final GeoBounds bounds;
   final List<OsmMapFeature> features;
   final DateTime fetchedAt;
+  final InfrastructureCoverage coverage;
 
   Iterable<OsmMapFeature> ofType(InfrastructureType type) =>
       features.where((feature) => feature.type == type);

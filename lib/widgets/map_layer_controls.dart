@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/map_layer.dart';
+import '../models/infrastructure_availability.dart';
 
 class MapLayerStyle {
   const MapLayerStyle._();
@@ -43,6 +44,8 @@ class MapLayerControls extends StatelessWidget {
     required this.zoom,
     this.error,
     this.onRetry,
+    this.infrastructureStatus = const InfrastructureStatus(),
+    this.canRequestInfrastructure = true,
   });
 
   final Set<MapLayer> visibleLayers;
@@ -52,11 +55,35 @@ class MapLayerControls extends StatelessWidget {
   final double zoom;
   final String? error;
   final VoidCallback? onRetry;
+  final InfrastructureStatus infrastructureStatus;
+  final bool canRequestInfrastructure;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final infrastructureReady = zoom >= 15;
+    final status = infrastructureStatus;
+    final message = switch (status.availability) {
+      InfrastructureAvailability.unavailable => 'Infrastructure unavailable in this area. Schools and Hazards remain available.',
+      InfrastructureAvailability.empty =>
+        'No mapped infrastructure was returned for this area.',
+      InfrastructureAvailability.cached =>
+        status.isEmpty
+            ? 'The valid cached response contains no mapped infrastructure in this area.'
+            : status.lastAttemptFailed
+            ? 'Using valid cached infrastructure for this area; refresh failed.'
+            : 'Using valid cached infrastructure for this area.',
+      InfrastructureAvailability.loading =>
+        status.hasValidCache
+            ? 'Refreshing infrastructure; showing valid cached data.'
+            : 'Loading infrastructure…',
+      InfrastructureAvailability.available =>
+        'Mapped infrastructure available for this area.',
+      InfrastructureAvailability.notRequested =>
+        infrastructureReady
+            ? 'Enable infrastructure layers or zoom closer to load them.'
+            : 'Zoom in for infrastructure.',
+    };
     return Semantics(
       container: true,
       label: 'Map key and layer visibility controls',
@@ -90,7 +117,9 @@ class MapLayerControls extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (loading) ...[
+                if (loading ||
+                    status.availability ==
+                        InfrastructureAvailability.loading) ...[
                   const SizedBox.square(
                     dimension: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
@@ -99,7 +128,7 @@ class MapLayerControls extends StatelessWidget {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 220),
                     child: Text(
-                      'Loading OpenStreetMap data…',
+                      message,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -107,9 +136,7 @@ class MapLayerControls extends StatelessWidget {
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 220),
                     child: Text(
-                      infrastructureReady
-                          ? 'OpenStreetMap + Supabase'
-                          : 'Zoom in for infrastructure',
+                      message,
                       style: Theme.of(context).textTheme.bodySmall
                           ?.copyWith(color: colors.onSurfaceVariant),
                     ),
@@ -122,22 +149,58 @@ class MapLayerControls extends StatelessWidget {
               runSpacing: 8,
               children: [
                 for (final layer in MapLayer.values)
-                  FilterChip(
-                    key: ValueKey('layer-${layer.name}'),
-                    selected: visibleLayers.contains(layer),
-                    onSelected: (selected) => onLayerChanged(layer, selected),
-                    avatar: Icon(
-                      MapLayerStyle.icon(layer),
-                      size: 18,
-                      color: MapLayerStyle.color(layer),
+                  if (layer == MapLayer.schools ||
+                      layer == MapLayer.hazards ||
+                      status.showLayerControls)
+                    FilterChip(
+                      key: ValueKey('layer-${layer.name}'),
+                      selected: visibleLayers.contains(layer),
+                      onSelected: (selected) => onLayerChanged(layer, selected),
+                      avatar: Icon(
+                        MapLayerStyle.icon(layer),
+                        size: 18,
+                        color: MapLayerStyle.color(layer),
+                      ),
+                      label: Text(
+                        '${layer.label} (${featureCounts[layer] ?? 0})',
+                      ),
                     ),
-                    label: Text(
-                      '${layer.label} (${featureCounts[layer] ?? 0})',
-                    ),
-                  ),
               ],
             ),
-            if (error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'OSM query coverage: ${status.coverage.name}. Missing OSM data does not prove that sidewalks or paths do not exist.',
+              key: const ValueKey('infrastructure-coverage'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (status.coverage == InfrastructureCoverage.complete)
+              Text(
+                'The requested query completed; real-world mapping may still be incomplete.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            if (status.lastAttemptFailed && onRetry != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('retry-infrastructure'),
+                  onPressed:
+                      status.retryAt != null ||
+                          loading ||
+                          !infrastructureReady ||
+                          !canRequestInfrastructure
+                      ? null
+                      : onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(
+                    !infrastructureReady || !canRequestInfrastructure
+                        ? 'Retry infrastructure (zoom in first)'
+                        : status.retryAt != null
+                        ? 'Retry infrastructure after ${status.retryAt!.toLocal().toIso8601String().substring(11, 19)}'
+                        : 'Retry infrastructure',
+                  ),
+                ),
+              ),
+            if (error != null && !status.lastAttemptFailed) ...[
               const SizedBox(height: 10),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
