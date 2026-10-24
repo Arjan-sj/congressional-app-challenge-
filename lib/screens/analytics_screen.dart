@@ -9,12 +9,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AnalyticsBucket;
 
 import 'analytics_school_picker.dart';
-import 'analytics_district_picker.dart';
 
 import '../data/pilot_school.dart';
 import '../models/analytics.dart';
 import '../models/hazard_report.dart';
-import '../models/school_district.dart';
 import '../services/analytics_export_service.dart';
 import '../services/analytics_repository.dart';
 import '../widgets/app_ui.dart';
@@ -56,7 +54,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Timer? _mapDebounce;
   late AnalyticsFilter _filter;
   AnalyticsData? _data;
-  List<AnalyticsDistrictOption> _districts = [];
   bool _rollingRange = true;
   final Set<String> _comparisonSchools = {};
   bool _loading = false;
@@ -103,10 +100,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _repository = AnalyticsRepository(client);
     _repository!.subscribeToChanges(_onRealtimeChange);
     _authSubscription = client.auth.onAuthStateChange.listen((_) {
-      unawaited(_load(refreshSchools: true));
+      unawaited(_load());
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_load(refreshSchools: true));
+      if (mounted) unawaited(_load());
     });
   }
 
@@ -129,7 +126,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     });
   }
 
-  Future<void> _load({bool refreshSchools = false}) async {
+  Future<void> _load() async {
     final repository = _repository;
     if (repository == null) return;
     if (_rollingRange) {
@@ -143,19 +140,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        repository.fetch(_filter, limit: 500),
-        if (refreshSchools || _districts.isEmpty)
-          repository.fetchDistrictOptions(),
-      ]);
+      final data = await repository.fetch(_filter, limit: 500);
       if (!mounted || version != _loadVersion) return;
-      final data = results.first as AnalyticsData;
-      final districts = results.length > 1
-          ? results[1] as List<AnalyticsDistrictOption>
-          : _districts;
       setState(() {
         _data = data;
-        _districts = districts;
         _comparisonSchools.removeWhere(
           (id) => !data.schools.any((school) => school.id == id),
         );
@@ -271,17 +259,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (result != null) _updateFilter(_filter.copyWith(schoolIds: result));
   }
 
-  Future<void> _chooseDistricts() async {
-    final result = await showDialog<Set<String>>(
-      context: context,
-      builder: (_) => AnalyticsDistrictPicker(
-        districts: _districts,
-        selected: _filter.districts,
-      ),
-    );
-    if (result != null) _updateFilter(_filter.copyWith(districts: result));
-  }
-
   Future<void> _showExportDialog() async {
     final current = _data;
     if (current == null) return;
@@ -308,7 +285,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Uses the active school, district, area, category, severity, and status filters.',
+                        'Uses the active school, area, category, severity, and status filters.',
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<AnalyticsExportFormat>(
@@ -412,7 +389,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Stack(
       children: [
         RefreshIndicator(
-          onRefresh: () => _load(refreshSchools: true),
+          onRefresh: _load,
           child: CustomScrollView(
             key: const ValueKey('analytics-scroll-view'),
             slivers: [
@@ -445,7 +422,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       filter: _filter,
                       onCustomRange: _chooseCustomRange,
                       onChooseSchools: _chooseSchools,
-                      onChooseDistricts: _chooseDistricts,
                       onChanged: _updateFilter,
                       mapBounds: _lastMapBounds,
                     ),
@@ -556,7 +532,6 @@ class _FilterPanel extends StatelessWidget {
     required this.filter,
     required this.onCustomRange,
     required this.onChooseSchools,
-    required this.onChooseDistricts,
     required this.onChanged,
     required this.mapBounds,
   });
@@ -564,7 +539,6 @@ class _FilterPanel extends StatelessWidget {
   final AnalyticsFilter filter;
   final VoidCallback onCustomRange;
   final VoidCallback onChooseSchools;
-  final VoidCallback onChooseDistricts;
   final ValueChanged<AnalyticsFilter> onChanged;
   final AnalyticsBounds? mapBounds;
 
@@ -645,15 +619,6 @@ class _FilterPanel extends StatelessWidget {
                       : '${filter.schoolIds.length} schools',
                 ),
                 onPressed: onChooseSchools,
-              ),
-              ActionChip(
-                avatar: const Icon(Icons.apartment_outlined, size: 18),
-                label: Text(
-                  filter.districts.isEmpty
-                      ? 'All districts'
-                      : '${filter.districts.length} districts',
-                ),
-                onPressed: onChooseDistricts,
               ),
               PopupMenuButton<int>(
                 tooltip: 'Filter severity',
@@ -1584,9 +1549,7 @@ class _SchoolAnalyticsSectionState extends State<_SchoolAnalyticsSection> {
   Widget build(BuildContext context) {
     final matching = widget.data.schools
         .where(
-          (school) => '${school.name} ${school.district}'
-              .toLowerCase()
-              .contains(_query.toLowerCase()),
+          (school) => school.name.toLowerCase().contains(_query.toLowerCase()),
         )
         .toList();
     final selected = widget.data.schools
@@ -1704,12 +1667,6 @@ class _SchoolCard extends StatelessWidget {
                     Text(
                       school.name,
                       style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      school.district,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
                     ),
                   ],
                 ),
@@ -1891,7 +1848,7 @@ class _AnalyticsNotConfigured extends StatelessWidget {
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.message, required this.onRetry});
   final String message;
-  final Future<void> Function({bool refreshSchools}) onRetry;
+  final Future<void> Function() onRetry;
 
   @override
   Widget build(BuildContext context) => SectionCard(

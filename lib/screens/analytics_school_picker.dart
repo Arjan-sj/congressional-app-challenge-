@@ -77,7 +77,7 @@ class _AnalyticsSchoolPickerState extends State<AnalyticsSchoolPicker> {
             maxLength: 120,
             decoration: const InputDecoration(
               labelText: 'Search nationwide schools',
-              hintText: 'Name, city, state, ZIP, or district',
+              hintText: 'Name, city, state, or ZIP',
             ),
             onChanged: (value) {
               _debounce?.cancel();
@@ -108,7 +108,10 @@ class _AnalyticsSchoolPickerState extends State<AnalyticsSchoolPicker> {
                     value: _selected.contains(school.id),
                     title: Text(school.name),
                     subtitle: Text(
-                      '${school.city ?? ''}, ${school.state ?? ''} • ${school.district}',
+                      [school.city, school.state]
+                          .whereType<String>()
+                          .where((value) => value.isNotEmpty)
+                          .join(', '),
                     ),
                     onChanged: (checked) => setState(() {
                       checked == true
