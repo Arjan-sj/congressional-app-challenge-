@@ -2,9 +2,13 @@
   "name": "saferoutes-sql-checks",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node run.mjs" },
+  "scripts": {
+    "test": "node run.mjs && node --test hazard-workflow.test.mjs",
+    "hazards": "node hazards.mjs"
+  },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11",
-    "@electric-sql/pglite-postgis": "0.2.11"
+    "@electric-sql/pglite-postgis": "0.2.11",
+    "pg": "8.23.1"
   }
 }
