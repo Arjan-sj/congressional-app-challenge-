@@ -1024,6 +1024,10 @@ class _AnalyticsMap extends StatelessWidget {
                   initialZoom: 12,
                   minZoom: 3,
                   maxZoom: 19,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all,
+                    scrollWheelVelocity: 0.005,
+                  ),
                   onPositionChanged: (camera, _) {
                     final bounds = camera.visibleBounds;
                     onBoundsChanged(
@@ -1097,6 +1101,11 @@ class _AnalyticsMap extends StatelessWidget {
                           ),
                       ],
                     ),
+                  const Positioned(
+                    right: 12,
+                    top: 12,
+                    child: _AnalyticsMapZoomControls(),
+                  ),
                   Positioned(
                     left: 10,
                     right: 10,
@@ -1122,6 +1131,46 @@ class _AnalyticsMap extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsMapZoomControls extends StatelessWidget {
+  const _AnalyticsMapZoomControls();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = MapController.of(context);
+    final camera = MapCamera.of(context);
+    final minZoom = camera.minZoom ?? 3;
+    final maxZoom = camera.maxZoom ?? 19;
+
+    void zoomBy(double amount) => controller.move(
+      camera.center,
+      (camera.zoom + amount).clamp(minZoom, maxZoom),
+    );
+
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      elevation: 4,
+      borderRadius: BorderRadius.circular(13),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Zoom in',
+            onPressed: camera.zoom < maxZoom ? () => zoomBy(1) : null,
+            icon: const Icon(Icons.add),
+          ),
+          const SizedBox(width: 48, child: Divider(height: 1)),
+          IconButton(
+            tooltip: 'Zoom out',
+            onPressed: camera.zoom > minZoom ? () => zoomBy(-1) : null,
+            icon: const Icon(Icons.remove),
           ),
         ],
       ),
