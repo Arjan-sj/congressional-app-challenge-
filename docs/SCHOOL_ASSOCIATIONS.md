@@ -11,17 +11,19 @@ up to 20 km. Reporting always uses the server policy radius, returned by
 `report_school_radius_meters()`. Change that function in a future additive
 migration to adjust reporting policy, and update the form's radius messages.
 
-The form suggests the closest school but requires confirmation. Other nearby
-schools can be selected. Moving the pin clears confirmation and stale requests
-cannot overwrite a newer lookup. Missing connectivity, missing migration, and
-empty results block submission with a retry/location message. Existing insert,
-authentication, photo upload/cleanup, status, and moderation paths are reused.
-The database trigger validates canonical identity and geographic eligibility on
-INSERT and on changes to school/coordinates, including direct API requests and
-demo inserts. Other updates can still moderate old rows without reassignment.
-RLS and existing column permissions remain in force. Nearby alternatives are
-permitted deliberately; the server validates eligibility, while the user confirms
-which school a shared-campus concern affects.
+The form automatically selects the closest school and displays its name and
+meter distance. There is no school picker or confirmation step. Shared campuses
+use the same distance-then-school-ID ordering as the server. Moving the pin
+immediately clears the old selection and stale requests cannot overwrite a newer
+lookup. Missing connectivity, missing migration, and empty results block
+submission with a retry/location message. Existing insert, authentication,
+photo upload/cleanup, status, and moderation paths are reused.
+The database independently recomputes the closest candidate on INSERT and on
+changes to school/coordinates. It rejects any different school ID, including
+another school within the radius or an alternate exact-distance tie. If the
+directory changes between lookup and save, the user must retry the location
+lookup. Other updates can still moderate historical rows without reassignment.
+RLS and existing column permissions remain in force.
 
 Analytics resolves known legacy aliases at read time, so retained Schaumburg
 reports appear under its canonical identity. Canonical and legacy filter IDs
@@ -36,12 +38,15 @@ ranges advance on refresh so newly submitted reports enter the active range.
 
 ## Deployment
 
-1. Review and merge the PR. Apply only the new migration
-   `20261024042039_nearest_school_association.sql` to the intended Supabase project
+1. Review and merge the PR. Apply the additive migrations in order:
+   `20261024042039_nearest_school_association.sql`, then
+   `20261024045850_automatically_assign_nearest_school.sql`. If the first is
+   already deployed, apply only the second to the intended Supabase project
    using the normal migration deployment process (`supabase db push` after linking
    and reviewing pending migrations). Existing migrations must not be edited or
-   replayed against production. The migration creates functions, index, trigger
-   and a private correction audit table; it changes no historical reports.
+   replayed against production. The first migration creates functions, index,
+   trigger and a private correction audit table. The second tightens the existing validation trigger to require
+   the single closest candidate. Neither changes historical reports.
 2. Deploy the Flutter build after the database migration. Existing clients that
    still submit `sample-school` will receive a validation error; coordinate the
    app rollout. Preserve the existing public Supabase URL/publishable key.
@@ -75,8 +80,9 @@ Git-ignored `private/` folder, not in the PR.
 After reviewing that private preview and receiving **explicit approval** for each
 correction, the operator builds an allowlist. Each item must contain `report_id`,
 `current_school_id`, original `latitude` and `longitude`, and the approved
-canonical `school_id`. Re-run the preview immediately before approval. The
-following is a dry-run template with an EMPTY allowlist, not an approved backfill:
+canonical closest `school_id`. The automatic-selection trigger also enforces
+the closest candidate during corrections. Re-run the preview immediately before
+approval. The following is a dry-run template with an EMPTY allowlist, not an approved backfill:
 
 ```sql
 begin;
@@ -125,9 +131,9 @@ system tables emulate Supabase's SQL interfaces; this does not test the hosted
 Auth, Storage HTTP service or Realtime transport. Fixtures/role changes roll back.
 Never run the fixture checks against production. The photo checks preserve
 existing metadata/path constraints rather than changing the Storage workflow.
-Flutter HTTP/widget tests cover suggestions, confirmations, stale pin lookups,
-no-match/errors, same-campus alternatives, payloads and nationwide paging. Live
-production submissions, hosted writes and the historical backfill are not part
+Flutter HTTP/widget tests cover automatic selection without user input, stale
+pin lookups, no-match/errors, deterministic shared-campus choices, payloads and
+nationwide paging. Live production submissions, hosted writes and the historical backfill are not part
 of this change's automated validation.
 
 ## Modified files
@@ -137,8 +143,8 @@ of this change's automated validation.
   name retention and finite-coordinate validation.
 - `lib/services/supabase_hazard_repository.dart`: nearest RPC, alias-aware report
   filtering, school name joins, and nationwide flag loading.
-- `lib/screens/report_form_screen.dart`: school suggestions, alternatives,
-  confirmation, retry and stale-request protection.
+- `lib/screens/report_form_screen.dart`: automatic nearest-school selection,
+  distance display, retry and stale-request protection.
 - `lib/screens/home_screen.dart`, `lib/app.dart`: nationwide report refresh,
   Realtime invalidation and injectable live-update opt-out for widget tests.
 - `lib/screens/reports_screen.dart`, `lib/services/hazard_ranking_service.dart`:
@@ -146,8 +152,8 @@ of this change's automated validation.
 - `lib/screens/analytics_screen.dart`, `lib/screens/analytics_school_picker.dart`,
   `lib/services/analytics_repository.dart`: server directory search/paging,
   complete district choices and refreshed rolling analytics.
-- New migration named above: lookup/index, server validation, directory RPCs,
-  alias-aware analytics, private preview/correction audit and approved-only RPC.
+- Additive migrations named above: lookup/index, strict nearest-school validation,
+  directory RPCs, alias-aware analytics, private preview/correction audit and approved-only RPC.
 - `supabase/checks/nearest_school_association.sql`: geographic, validation,
   backfill, alias, index, RLS, photo, moderation and analytics assertions.
 - `supabase/checks/preview_pilot_school_associations.sql`: predeployment SELECT.

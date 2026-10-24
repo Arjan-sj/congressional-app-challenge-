@@ -47,9 +47,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   HazardPhotoDraft? _photo;
   String? _photoError;
   double? _uploadProgress;
-  List<NearbySchool> _schools = [];
-  String? _schoolId;
-  bool _schoolConfirmed = false;
+  NearbySchool? _school;
   bool _lookingUpSchool = false;
   String? _schoolError;
   int _lookupVersion = 0;
@@ -72,9 +70,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
 
   Future<void> _lookupSchools() async {
     final version = ++_lookupVersion;
-    _schools = [];
-    _schoolId = null;
-    _schoolConfirmed = false;
+    _school = null;
     _schoolError = null;
     _lookingUpSchool = _hasLocation && widget.lookupSchools != null;
     if (!_hasLocation) return;
@@ -90,8 +86,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       ).timeout(const Duration(seconds: 15));
       if (!mounted || version != _lookupVersion) return;
       setState(() {
-        _schools = schools;
-        _schoolId = schools.firstOrNull?.id;
+        _school = schools.firstOrNull;
         if (schools.isEmpty) {
           _schoolError = 'No schools were found within 2,000 meters. Choose another location; this report cannot be submitted without an appropriate nearby school.';
         }
@@ -169,8 +164,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     if (_saving ||
         !widget.submissionEnabled ||
         !_hasLocation ||
-        !_schoolConfirmed ||
-        _schoolId == null ||
+        _school == null ||
         _lookingUpSchool ||
         !_formKey.currentState!.validate()) {
       return;
@@ -183,7 +177,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       await widget.onSubmit(
         HazardReport(
           id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-          schoolId: _schoolId!,
+          schoolId: _school!.id,
           type: _type,
           severity: _severity.round(),
           description: _descriptionController.text.trim(),
@@ -372,15 +366,15 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const SizedBox(height: 16),
                               Text(
-                                'Confirm the associated school',
+                                'Associated school',
                                 style: Theme.of(context).textTheme.titleSmall,
                               ),
                               const SizedBox(height: 8),
-                              if (_lookingUpSchool)
-                                const LinearProgressIndicator()
-                              else if (_schoolError != null) ...[
+                              if (_lookingUpSchool) ...[
+                                const Text('Finding the closest school…'),
+                                const LinearProgressIndicator(),
+                              ] else if (_schoolError != null) ...[
                                 Text(
                                   _schoolError!,
                                   key: const ValueKey('school-lookup-error'),
@@ -392,55 +386,15 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                                     }),
                                     child: const Text('Retry school lookup'),
                                   ),
-                              ] else if (_schools.isNotEmpty) ...[
+                              ] else if (_school case final school?)
                                 Text(
-                                  'Suggested: ${_schools.first.name} (${_schools.first.distanceMeters.round()} m away)',
+                                  'Automatically associated with ${school.name} (${school.distanceMeters.round()} m away)',
+                                  key: const ValueKey('automatic-school'),
+                                )
+                              else
+                                const Text(
+                                  'Select a map point to identify the closest school.',
                                 ),
-                                if (_schools.length > 1 &&
-                                    _schools[1].distanceMeters -
-                                            _schools.first.distanceMeters <=
-                                        50)
-                                  const Text(
-                                    'Several schools share this area. Check which school this concern affects.',
-                                  ),
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('school-$_lookupVersion'),
-                                  initialValue: _schoolId,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Nearby school',
-                                  ),
-                                  items: [
-                                    for (final school in _schools)
-                                      DropdownMenuItem(
-                                        value: school.id,
-                                        child: Text(
-                                          '${school.name} • ${school.distanceMeters.round()} m',
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                  ],
-                                  onChanged: _saving
-                                      ? null
-                                      : (value) => setState(() {
-                                          _schoolId = value;
-                                          _schoolConfirmed = false;
-                                        }),
-                                ),
-                                CheckboxListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text(
-                                    'I confirm this is the appropriate school',
-                                  ),
-                                  value: _schoolConfirmed,
-                                  onChanged: _saving
-                                      ? null
-                                      : (value) => setState(
-                                          () =>
-                                              _schoolConfirmed = value ?? false,
-                                        ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -729,8 +683,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                           widget.submissionEnabled &&
                               _hasLocation &&
                               !_saving &&
-                              _schoolConfirmed &&
-                              _schoolId != null &&
+                              _school != null &&
                               !_lookingUpSchool
                           ? _save
                           : null,

@@ -40,48 +40,43 @@ Widget form({
   ),
 );
 
-Future<void> confirm(WidgetTester tester) async {
-  await tester.ensureVisible(find.byType(CheckboxListTile));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byType(CheckboxListTile));
-  await tester.pumpAndSettle();
-}
-
 bool canSave(WidgetTester tester) =>
     tester.widget<FilledButton>(find.byType(FilledButton)).onPressed != null;
 
 void main() {
   for (final id in ['A', 'B', '173045003167']) {
-    testWidgets('confirmed nearest $id is saved with hazard coordinates', (
-      tester,
-    ) async {
-      HazardReport? saved;
-      await tester.pumpWidget(
-        form(
-          lookup: (_, _) async => [school(id)],
-          onSave: (r) async => saved = r,
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(canSave(tester), isFalse);
-      await confirm(tester);
-      await tester.ensureVisible(find.byType(TextFormField));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextFormField),
-        'Hazard at the reported pin',
-      );
-      await tester.tap(find.text('Submit unverified report'));
-      await tester.pumpAndSettle();
-      expect(saved!.schoolId, id);
-      expect(saved!.latitude, 40);
-      expect(saved!.longitude, -80);
-      expect(saved!.status, ReportStatus.unverified);
-    });
+    testWidgets(
+      'automatically selected nearest $id is saved with hazard coordinates',
+      (tester) async {
+        HazardReport? saved;
+        await tester.pumpWidget(
+          form(
+            lookup: (_, _) async => [school(id)],
+            onSave: (r) async => saved = r,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(canSave(tester), isTrue);
+        expect(find.byType(CheckboxListTile), findsNothing);
+        expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+        await tester.ensureVisible(find.byType(TextFormField));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byType(TextFormField),
+          'Hazard at the reported pin',
+        );
+        await tester.tap(find.text('Submit unverified report'));
+        await tester.pumpAndSettle();
+        expect(saved!.schoolId, id);
+        expect(saved!.latitude, 40);
+        expect(saved!.longitude, -80);
+        expect(saved!.status, ReportStatus.unverified);
+      },
+    );
   }
 
   testWidgets(
-    'shared campus offers an alternate school and requires confirmation',
+    'shared campus automatically uses the first deterministic server candidate',
     (tester) async {
       HazardReport? saved;
       await tester.pumpWidget(
@@ -92,17 +87,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('Several schools share this area'),
+        find.textContaining('Automatically associated with School A'),
         findsOneWidget,
       );
-      await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButtonFormField<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('School B • 10 m').last);
-      await tester.pumpAndSettle();
-      expect(canSave(tester), isFalse);
-      await confirm(tester);
+      expect(find.byType(CheckboxListTile), findsNothing);
+      expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+      expect(canSave(tester), isTrue);
       await tester.ensureVisible(find.byType(TextFormField));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -111,12 +101,12 @@ void main() {
       );
       await tester.tap(find.text('Submit unverified report'));
       await tester.pumpAndSettle();
-      expect(saved!.schoolId, 'B');
+      expect(saved!.schoolId, 'A');
     },
   );
 
   testWidgets(
-    'moving the pin clears confirmation and ignores stale lookup responses',
+    'moving the pin automatically updates the school and ignores stale lookup responses',
     (tester) async {
       final pending = Completer<List<NearbySchool>>();
       Future<List<NearbySchool>> lookup(double lat, double _) async => lat == 40
@@ -126,19 +116,24 @@ void main() {
           : [school('B')];
       await tester.pumpWidget(form(lookup: lookup));
       await tester.pumpAndSettle();
-      await confirm(tester);
       expect(canSave(tester), isTrue);
       await tester.pumpWidget(form(lookup: lookup, latitude: 41));
       await tester.pump();
       expect(canSave(tester), isFalse);
       await tester.pumpWidget(form(lookup: lookup, latitude: 42));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Suggested: School B'), findsOneWidget);
-      expect(canSave(tester), isFalse);
+      expect(
+        find.textContaining('Automatically associated with School B'),
+        findsOneWidget,
+      );
+      expect(canSave(tester), isTrue);
       pending.complete([school('STALE')]);
       await tester.pumpAndSettle();
       expect(find.textContaining('STALE'), findsNothing);
-      expect(find.textContaining('Suggested: School B'), findsOneWidget);
+      expect(
+        find.textContaining('Automatically associated with School B'),
+        findsOneWidget,
+      );
     },
   );
 
@@ -157,7 +152,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('school-lookup-error')), findsOneWidget);
       expect(canSave(tester), isFalse);
-      expect(find.textContaining('Suggested:'), findsNothing);
+      expect(find.byKey(const ValueKey('automatic-school')), findsNothing);
     });
   }
 

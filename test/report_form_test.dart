@@ -44,10 +44,6 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
     await tester.ensureVisible(find.byType(TextFormField));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -95,10 +91,6 @@ void main() {
     );
 
     const description = 'Observed concern retained after a failed save';
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byType(TextFormField));
     await tester.pumpAndSettle();

@@ -22,6 +22,8 @@ on conflict(id) do nothing;
 update public.schools set canonical_id='173045003167' where id='sample-school';
 insert into public.schools(id,name,latitude,longitude,canonical_id) values
   ('test-alias','School A legacy alias',-60,0,'test-A');
+insert into public.schools(id,name,latitude,longitude) values
+  ('test-A-near','Nearby alternate School A',-60,0.01);
 insert into auth.users(id) values
   ('10000000-0000-0000-0000-000000000001'),
   ('10000000-0000-0000-0000-000000000002'),
@@ -85,7 +87,10 @@ insert into public.hazard_reports(school_id,latitude,longitude,type,severity,des
   ('test-A',-60,0,'blocked_path',3,'Correct School A report'),
   ('test-B',-60,0.1,'blocked_path',3,'Correct School B report'),
   ('173045003167',42.027416,-88.106632,'blocked_path',3,'Correct Schaumburg report'),
-  ('test-campus-2',-60,0.2,'blocked_path',3,'Confirmed alternate campus');
+  ('test-campus-1',-60,0.2,'blocked_path',3,'Automatically selected shared campus');
+select pg_temp.expect_error($q$insert into public.hazard_reports(school_id,latitude,longitude,type,severity,description) values ('test-campus-2',-60,0.2,'blocked_path',3,'Cannot override deterministic campus choice')$q$,'23514');
+-- Both schools are within 2 km here, but the closer one must win.
+select pg_temp.expect_error($q$insert into public.hazard_reports(school_id,latitude,longitude,type,severity,description) values ('test-A-near',-60,0.0001,'blocked_path',3,'Cannot choose a nonclosest nearby school')$q$,'23514');
 select pg_temp.expect_error($q$insert into public.hazard_reports(school_id,latitude,longitude,type,severity,description) values ('sample-school',-60,0,'blocked_path',3,'Malicious pilot school')$q$,'23514');
 select pg_temp.expect_error($q$insert into public.hazard_reports(school_id,latitude,longitude,type,severity,description,is_demo) values ('test-B',-60,0,'blocked_path',3,'Malicious distant school',true)$q$,'23514');
 select pg_temp.expect_error($q$insert into public.hazard_reports(school_id,latitude,longitude,type,severity,description) values ('test-alias',-60,0,'blocked_path',3,'Malicious legacy alias')$q$,'23514');
