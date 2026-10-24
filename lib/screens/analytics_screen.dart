@@ -9,10 +9,12 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AnalyticsBucket;
 
 import 'analytics_school_picker.dart';
+import 'analytics_district_picker.dart';
 
 import '../data/pilot_school.dart';
 import '../models/analytics.dart';
 import '../models/hazard_report.dart';
+import '../models/school_district.dart';
 import '../services/analytics_export_service.dart';
 import '../services/analytics_repository.dart';
 import '../widgets/app_ui.dart';
@@ -54,7 +56,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Timer? _mapDebounce;
   late AnalyticsFilter _filter;
   AnalyticsData? _data;
-  List<String> _districts = [];
+  List<AnalyticsDistrictOption> _districts = [];
   bool _rollingRange = true;
   final Set<String> _comparisonSchools = {};
   bool _loading = false;
@@ -143,12 +145,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     try {
       final results = await Future.wait([
         repository.fetch(_filter, limit: 500),
-        if (refreshSchools || _districts.isEmpty) repository.fetchDistricts(),
+        if (refreshSchools || _districts.isEmpty)
+          repository.fetchDistrictOptions(),
       ]);
       if (!mounted || version != _loadVersion) return;
       final data = results.first as AnalyticsData;
       final districts = results.length > 1
-          ? results[1] as List<String>
+          ? results[1] as List<AnalyticsDistrictOption>
           : _districts;
       setState(() {
         _data = data;
@@ -266,6 +269,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ),
     );
     if (result != null) _updateFilter(_filter.copyWith(schoolIds: result));
+  }
+
+  Future<void> _chooseDistricts() async {
+    final result = await showDialog<Set<String>>(
+      context: context,
+      builder: (_) => AnalyticsDistrictPicker(
+        districts: _districts,
+        selected: _filter.districts,
+      ),
+    );
+    if (result != null) _updateFilter(_filter.copyWith(districts: result));
   }
 
   Future<void> _showExportDialog() async {
@@ -429,9 +443,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     const SizedBox(height: 20),
                     _FilterPanel(
                       filter: _filter,
-                      districts: _districts,
                       onCustomRange: _chooseCustomRange,
                       onChooseSchools: _chooseSchools,
+                      onChooseDistricts: _chooseDistricts,
                       onChanged: _updateFilter,
                       mapBounds: _lastMapBounds,
                     ),
@@ -540,17 +554,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 class _FilterPanel extends StatelessWidget {
   const _FilterPanel({
     required this.filter,
-    required this.districts,
     required this.onCustomRange,
     required this.onChooseSchools,
+    required this.onChooseDistricts,
     required this.onChanged,
     required this.mapBounds,
   });
 
   final AnalyticsFilter filter;
-  final List<String> districts;
   final VoidCallback onCustomRange;
   final VoidCallback onChooseSchools;
+  final VoidCallback onChooseDistricts;
   final ValueChanged<AnalyticsFilter> onChanged;
   final AnalyticsBounds? mapBounds;
 
@@ -632,29 +646,14 @@ class _FilterPanel extends StatelessWidget {
                 ),
                 onPressed: onChooseSchools,
               ),
-              PopupMenuButton<String>(
-                tooltip: 'Filter districts',
-                itemBuilder: (context) => [
-                  for (final district in districts)
-                    CheckedPopupMenuItem(
-                      value: district,
-                      checked: filter.districts.contains(district),
-                      child: Text(district),
-                    ),
-                ],
-                onSelected: (district) {
-                  final values = {...filter.districts};
-                  values.contains(district)
-                      ? values.remove(district)
-                      : values.add(district);
-                  onChanged(filter.copyWith(districts: values));
-                },
-                child: _FilterButton(
-                  label: filter.districts.isEmpty
+              ActionChip(
+                avatar: const Icon(Icons.apartment_outlined, size: 18),
+                label: Text(
+                  filter.districts.isEmpty
                       ? 'All districts'
                       : '${filter.districts.length} districts',
-                  icon: Icons.apartment_outlined,
                 ),
+                onPressed: onChooseDistricts,
               ),
               PopupMenuButton<int>(
                 tooltip: 'Filter severity',

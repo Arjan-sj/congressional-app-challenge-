@@ -1,5 +1,6 @@
 import unittest
-from import_schools import normalize, sql_batch
+from import_schools import normalize, sql_batch, batch_payload
+from nces_districts import normalize_district
 from import_infrastructure import classify, valid_geometry, CrossingIndex
 
 
@@ -32,6 +33,38 @@ class ImportTests(unittest.TestCase):
         sql = sql_batch([normalize(self.row(),'public','2425',set())])
         self.assertIn("O''Brien",sql)
         self.assertIn('on conflict(id) do update',sql)
+
+    def test_public_import_includes_exact_district_and_version(self):
+        row=self.row(LEAID='0012345',OPSTFIPS='01',STATE='AL')
+        district=normalize_district(dict(LEAID='0012345',NAME="O'Brien District",STATE='AL',OPSTFIPS='01',SCHOOLYEAR='2024-2025'))
+        school=normalize(row,'public','2425',set(),{'0012345':district})
+        self.assertEqual(school['id'],'001234567890')
+        self.assertEqual(school['district_id'],'nces-lea:0012345')
+        self.assertEqual(school['district_source_year'],'2024-2025')
+        self.assertEqual(school['district'],"O'Brien District")
+        payload=batch_payload([school],'Reviewed source')
+        self.assertNotIn('_district_fact',payload['p_schools'][0])
+        self.assertEqual(payload['p_districts'][0]['nces_lea_id'],'0012345')
+        self.assertEqual(len(payload['p_plan_sha256']),64)
+        self.assertIn('public.sync_nces_school_batch',sql_batch([school],'Reviewed source'))
+        self.assertIn("O''Brien",sql_batch([school],'Reviewed source'))
+        with self.assertRaises(ValueError): sql_batch([school])
+
+    def test_district_import_rejects_missing_or_incompatible_facts(self):
+        row=self.row(LEAID='0012345',OPSTFIPS='01',STATE='AL')
+        with self.assertRaises(ValueError): normalize(row,'public','2425',set(),{})
+        district=normalize_district(dict(LEAID='0012345',NAME='District',STATE='AL',OPSTFIPS='02',SCHOOLYEAR='2024-2025'))
+        with self.assertRaises(ValueError): normalize(row,'public','2425',set(),{'0012345':district})
+
+    def test_import_keeps_official_cross_state_links_and_private_independence(self):
+        row=self.row(LEAID='0012345',OPSTFIPS='12',STATE='FL')
+        district=normalize_district(dict(LEAID='0012345',NAME='Multi-state LEA',STATE='TX',OPSTFIPS='12',SCHOOLYEAR='2024-2025'))
+        school=normalize(row,'public','2425',set(),{'0012345':district})
+        self.assertEqual(school['state'],'FL')
+        self.assertEqual(school['_district_fact']['state'],'TX')
+        private=normalize(row,'private','2324',set(),{'0012345':district})
+        self.assertNotIn('district_id',private)
+        self.assertNotIn('_district_fact',private)
 
     def test_footway_is_not_automatically_a_sidewalk(self):
         self.assertEqual(classify({'highway':'footway'}),['walkingPath'])

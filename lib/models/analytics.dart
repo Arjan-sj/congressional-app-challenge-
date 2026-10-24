@@ -1,6 +1,7 @@
 import 'package:latlong2/latlong.dart';
 
 import 'hazard_report.dart';
+import 'school.dart';
 
 enum AnalyticsBucket {
   day('Daily'),
@@ -434,6 +435,7 @@ class SchoolAnalytics {
     this.city,
     this.state,
     this.averageResolutionHours,
+    this.districtId,
   });
 
   factory SchoolAnalytics.fromJson(Map<String, dynamic> json) =>
@@ -441,6 +443,7 @@ class SchoolAnalytics {
         id: json['id'].toString(),
         name: json['name']?.toString() ?? 'School unavailable',
         district: json['district']?.toString() ?? 'District unavailable',
+        districtId: schoolDistrictIdFromRow(json),
         city: json['city']?.toString(),
         state: json['state']?.toString(),
         latitude: _double(json['latitude']),
@@ -466,6 +469,7 @@ class SchoolAnalytics {
   final String id;
   final String name;
   final String district;
+  final String? districtId;
   final String? city;
   final String? state;
   final double latitude;
@@ -485,6 +489,7 @@ class SchoolAnalytics {
     'id': id,
     'name': name,
     'district': district,
+    if (districtId != null) 'district_id': districtId,
     'city': city,
     'state': state,
     'latitude': latitude,
@@ -511,6 +516,7 @@ class AnalyticsSchoolOption {
     required this.longitude,
     this.city,
     this.state,
+    this.districtId,
   });
 
   factory AnalyticsSchoolOption.fromJson(Map<String, dynamic> json) =>
@@ -518,6 +524,7 @@ class AnalyticsSchoolOption {
         id: json['id'].toString(),
         name: json['name']?.toString() ?? 'School unavailable',
         district: json['district']?.toString() ?? 'District unavailable',
+        districtId: schoolDistrictIdFromRow(json),
         city: json['city']?.toString(),
         state: json['state']?.toString(),
         latitude: _double(json['latitude']),
@@ -527,6 +534,7 @@ class AnalyticsSchoolOption {
   final String id;
   final String name;
   final String district;
+  final String? districtId;
   final String? city;
   final String? state;
   final double latitude;

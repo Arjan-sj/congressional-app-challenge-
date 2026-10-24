@@ -17,6 +17,9 @@ For isolated testing, see the [Phase 1 staging hazard workflow](docs/STAGING_HAZ
 separate environment settings, read-only previews, backed-up Storage API cleanup,
 and reproducible synthetic fixtures. Production resets are blocked.
 
+For verified NCES public-school district relationships, see the
+[Phase 2 district schema, preview and reviewed backfill workflow](docs/SCHOOL_DISTRICTS.md).
+
 ## Run locally (macOS or Linux)
 
 Install [Flutter](https://docs.flutter.dev/get-started/install), Git, and Google Chrome first. Then:

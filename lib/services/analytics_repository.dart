@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/analytics.dart';
+import '../models/school_district.dart';
 
 class AnalyticsRepository {
   const AnalyticsRepository(this.client);
@@ -10,6 +11,17 @@ class AnalyticsRepository {
   Future<List<String>> fetchDistricts() async {
     final values = await client.rpc('analytics_school_districts');
     return (values as List).cast<String>();
+  }
+
+  Future<List<AnalyticsDistrictOption>> fetchDistrictOptions() async {
+    final values = await client.rpc('analytics_district_options');
+    return (values as List)
+        .map(
+          (row) => AnalyticsDistrictOption.fromJson(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
   }
 
   Future<AnalyticsData> fetch(

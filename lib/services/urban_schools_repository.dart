@@ -77,6 +77,7 @@ class UrbanSchoolsRepository {
       id: row['ncessch']?.toString() ?? row['school_id'].toString(),
       name: row['school_name']?.toString() ?? 'Public school',
       district: row['lea_name']?.toString() ?? 'District unavailable',
+      districtId: _districtIdFromRow(row),
       address: [street, cityLine].where((part) => part.isNotEmpty).join(', '),
       city: city,
       state: state,
@@ -88,6 +89,20 @@ class UrbanSchoolsRepository {
   }
 
   void close() => _client.close();
+
+  String? _districtIdFromRow(Map<String, dynamic> row) {
+    final leaId = (row['lea_id'] ?? row['leaid'])?.toString();
+    final schoolId = row['ncessch']?.toString();
+    if (leaId == null ||
+        schoolId == null ||
+        !RegExp(r'^[0-9]{7}$').hasMatch(leaId) ||
+        !RegExp(r'^[0-9]{12}$').hasMatch(schoolId)) {
+      return null;
+    }
+    // Use the explicit same-source relationship. An LEA can change without
+    // treating the school's historical identifier prefix as the current LEA.
+    return 'nces-lea:$leaId';
+  }
 }
 
 class UsState {
