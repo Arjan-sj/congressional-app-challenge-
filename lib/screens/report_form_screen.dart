@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../data/pilot_school.dart';
+import '../models/nearby_school.dart';
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
 import '../widgets/app_ui.dart';
@@ -16,6 +16,7 @@ class ReportFormScreen extends StatefulWidget {
     this.isLive = false,
     this.submissionEnabled = true,
     this.pickPhoto,
+    this.lookupSchools,
   });
 
   final Future<void> Function(
@@ -30,6 +31,7 @@ class ReportFormScreen extends StatefulWidget {
   final bool isLive;
   final bool submissionEnabled;
   final Future<HazardPhotoDraft?> Function(ImageSource source)? pickPhoto;
+  final NearbySchoolLookup? lookupSchools;
 
   @override
   State<ReportFormScreen> createState() => _ReportFormScreenState();
@@ -45,6 +47,66 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   HazardPhotoDraft? _photo;
   String? _photoError;
   double? _uploadProgress;
+  List<NearbySchool> _schools = [];
+  String? _schoolId;
+  bool _schoolConfirmed = false;
+  bool _lookingUpSchool = false;
+  String? _schoolError;
+  int _lookupVersion = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lookupSchools();
+  }
+
+  @override
+  void didUpdateWidget(covariant ReportFormScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedLatitude != widget.selectedLatitude ||
+        oldWidget.selectedLongitude != widget.selectedLongitude ||
+        (oldWidget.lookupSchools == null) != (widget.lookupSchools == null)) {
+      _lookupSchools();
+    }
+  }
+
+  Future<void> _lookupSchools() async {
+    final version = ++_lookupVersion;
+    _schools = [];
+    _schoolId = null;
+    _schoolConfirmed = false;
+    _schoolError = null;
+    _lookingUpSchool = _hasLocation && widget.lookupSchools != null;
+    if (!_hasLocation) return;
+    final lookup = widget.lookupSchools;
+    if (lookup == null) {
+      _schoolError = 'School lookup is unavailable. Connect to Supabase before submitting.';
+      return;
+    }
+    try {
+      final schools = await lookup(
+        widget.selectedLatitude!,
+        widget.selectedLongitude!,
+      ).timeout(const Duration(seconds: 15));
+      if (!mounted || version != _lookupVersion) return;
+      setState(() {
+        _schools = schools;
+        _schoolId = schools.firstOrNull?.id;
+        if (schools.isEmpty) {
+          _schoolError = 'No schools were found within 2,000 meters. Choose another location; this report cannot be submitted without an appropriate nearby school.';
+        }
+      });
+    } catch (_) {
+      if (!mounted || version != _lookupVersion) return;
+      setState(
+        () => _schoolError = 'Could not look up nearby schools. Check your connection and retry.',
+      );
+    } finally {
+      if (mounted && version == _lookupVersion) {
+        setState(() => _lookingUpSchool = false);
+      }
+    }
+  }
 
   bool get _hasLocation =>
       widget.selectedLatitude != null && widget.selectedLongitude != null;
@@ -104,7 +166,15 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   }
 
   Future<void> _save() async {
-    if (_saving || !_hasLocation || !_formKey.currentState!.validate()) return;
+    if (_saving ||
+        !widget.submissionEnabled ||
+        !_hasLocation ||
+        !_schoolConfirmed ||
+        _schoolId == null ||
+        _lookingUpSchool ||
+        !_formKey.currentState!.validate()) {
+      return;
+    }
     setState(() {
       _saving = true;
       _uploadProgress = _photo == null ? null : 0;
@@ -113,7 +183,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       await widget.onSubmit(
         HazardReport(
           id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-          schoolId: PilotSchool.id,
+          schoolId: _schoolId!,
           type: _type,
           severity: _severity.round(),
           description: _descriptionController.text.trim(),
@@ -294,6 +364,83 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                                   ],
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const SizedBox(height: 16),
+                              Text(
+                                'Confirm the associated school',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 8),
+                              if (_lookingUpSchool)
+                                const LinearProgressIndicator()
+                              else if (_schoolError != null) ...[
+                                Text(
+                                  _schoolError!,
+                                  key: const ValueKey('school-lookup-error'),
+                                ),
+                                if (widget.lookupSchools != null)
+                                  TextButton(
+                                    onPressed: () => setState(() {
+                                      _lookupSchools();
+                                    }),
+                                    child: const Text('Retry school lookup'),
+                                  ),
+                              ] else if (_schools.isNotEmpty) ...[
+                                Text(
+                                  'Suggested: ${_schools.first.name} (${_schools.first.distanceMeters.round()} m away)',
+                                ),
+                                if (_schools.length > 1 &&
+                                    _schools[1].distanceMeters -
+                                            _schools.first.distanceMeters <=
+                                        50)
+                                  const Text(
+                                    'Several schools share this area. Check which school this concern affects.',
+                                  ),
+                                DropdownButtonFormField<String>(
+                                  key: ValueKey('school-$_lookupVersion'),
+                                  initialValue: _schoolId,
+                                  isExpanded: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Nearby school',
+                                  ),
+                                  items: [
+                                    for (final school in _schools)
+                                      DropdownMenuItem(
+                                        value: school.id,
+                                        child: Text(
+                                          '${school.name} • ${school.distanceMeters.round()} m',
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged: _saving
+                                      ? null
+                                      : (value) => setState(() {
+                                          _schoolId = value;
+                                          _schoolConfirmed = false;
+                                        }),
+                                ),
+                                CheckboxListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text(
+                                    'I confirm this is the appropriate school',
+                                  ),
+                                  value: _schoolConfirmed,
+                                  onChanged: _saving
+                                      ? null
+                                      : (value) => setState(
+                                          () =>
+                                              _schoolConfirmed = value ?? false,
+                                        ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -579,7 +726,12 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                       const Spacer(),
                     FilledButton.icon(
                       onPressed:
-                          widget.submissionEnabled && _hasLocation && !_saving
+                          widget.submissionEnabled &&
+                              _hasLocation &&
+                              !_saving &&
+                              _schoolConfirmed &&
+                              _schoolId != null &&
+                              !_lookingUpSchool
                           ? _save
                           : null,
                       icon: const Icon(Icons.save_outlined),

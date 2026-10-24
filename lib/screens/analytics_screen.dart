@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AnalyticsBucket;
 
+import 'analytics_school_picker.dart';
+
 import '../data/pilot_school.dart';
 import '../models/analytics.dart';
 import '../models/hazard_report.dart';
@@ -31,11 +33,13 @@ class AnalyticsScreen extends StatefulWidget {
     required this.client,
     required this.isActive,
     this.enableMapTiles = true,
+    this.refreshVersion = 0,
   });
 
   final SupabaseClient? client;
   final bool isActive;
   final bool enableMapTiles;
+  final int refreshVersion;
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -50,7 +54,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Timer? _mapDebounce;
   late AnalyticsFilter _filter;
   AnalyticsData? _data;
-  List<AnalyticsSchoolOption> _schools = [];
+  List<String> _districts = [];
+  bool _rollingRange = true;
   final Set<String> _comparisonSchools = {};
   bool _loading = false;
   bool _loadingMore = false;
@@ -79,6 +84,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.isActive && !oldWidget.isActive) {
       _startLiveAnalytics();
+    }
+    if (widget.isActive &&
+        _repository != null &&
+        (!oldWidget.isActive ||
+            widget.refreshVersion != oldWidget.refreshVersion)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_load());
+      });
     }
   }
 
@@ -117,6 +130,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Future<void> _load({bool refreshSchools = false}) async {
     final repository = _repository;
     if (repository == null) return;
+    if (_rollingRange) {
+      final duration = _filter.to.difference(_filter.from);
+      final now = DateTime.now();
+      _filter = _filter.copyWith(from: now.subtract(duration), to: now);
+    }
     final version = ++_loadVersion;
     setState(() {
       _loading = true;
@@ -125,16 +143,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     try {
       final results = await Future.wait([
         repository.fetch(_filter, limit: 500),
-        if (refreshSchools || _schools.isEmpty) repository.fetchSchools(),
+        if (refreshSchools || _districts.isEmpty) repository.fetchDistricts(),
       ]);
       if (!mounted || version != _loadVersion) return;
       final data = results.first as AnalyticsData;
-      final schools = results.length > 1
-          ? results[1] as List<AnalyticsSchoolOption>
-          : _schools;
+      final districts = results.length > 1
+          ? results[1] as List<String>
+          : _districts;
       setState(() {
         _data = data;
-        _schools = schools;
+        _districts = districts;
         _comparisonSchools.removeWhere(
           (id) => !data.schools.any((school) => school.id == id),
         );
@@ -203,6 +221,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   void _updateFilter(AnalyticsFilter filter) {
+    if (filter.from != _filter.from || filter.to != _filter.to) {
+      _rollingRange =
+          const [
+            7,
+            30,
+            90,
+          ].contains(filter.to.difference(filter.from).inDays) &&
+          DateTime.now().difference(filter.to).inSeconds.abs() < 60;
+    }
     setState(() => _filter = filter);
     unawaited(_load());
   }
@@ -229,68 +256,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Future<void> _chooseSchools() async {
-    final selected = {..._filter.schoolIds};
-    var query = '';
+    final repository = _repository;
+    if (repository == null) return;
     final result = await showDialog<Set<String>>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final visible = _schools.where((school) {
-            final value = '${school.name} ${school.district}'.toLowerCase();
-            return value.contains(query.toLowerCase());
-          }).toList();
-          return AlertDialog(
-            title: const Text('Filter by school'),
-            content: SizedBox(
-              width: 520,
-              height: 460,
-              child: Column(
-                children: [
-                  TextField(
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Search schools',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (value) =>
-                        setDialogState(() => query = value.trim()),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: visible.isEmpty
-                        ? const Center(child: Text('No schools match.'))
-                        : ListView.builder(
-                            itemCount: visible.length,
-                            itemBuilder: (context, index) {
-                              final school = visible[index];
-                              return CheckboxListTile(
-                                value: selected.contains(school.id),
-                                title: Text(school.name),
-                                subtitle: Text(school.district),
-                                onChanged: (checked) => setDialogState(() {
-                                  checked == true
-                                      ? selected.add(school.id)
-                                      : selected.remove(school.id);
-                                }),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, <String>{}),
-                child: const Text('Clear'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, selected),
-                child: const Text('Apply'),
-              ),
-            ],
-          );
-        },
+      builder: (_) => AnalyticsSchoolPicker(
+        repository: repository,
+        selected: _filter.schoolIds,
       ),
     );
     if (result != null) _updateFilter(_filter.copyWith(schoolIds: result));
@@ -457,7 +429,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     const SizedBox(height: 20),
                     _FilterPanel(
                       filter: _filter,
-                      schools: _schools,
+                      districts: _districts,
                       onCustomRange: _chooseCustomRange,
                       onChooseSchools: _chooseSchools,
                       onChanged: _updateFilter,
@@ -568,7 +540,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 class _FilterPanel extends StatelessWidget {
   const _FilterPanel({
     required this.filter,
-    required this.schools,
+    required this.districts,
     required this.onCustomRange,
     required this.onChooseSchools,
     required this.onChanged,
@@ -576,7 +548,7 @@ class _FilterPanel extends StatelessWidget {
   });
 
   final AnalyticsFilter filter;
-  final List<AnalyticsSchoolOption> schools;
+  final List<String> districts;
   final VoidCallback onCustomRange;
   final VoidCallback onChooseSchools;
   final ValueChanged<AnalyticsFilter> onChanged;
@@ -584,8 +556,6 @@ class _FilterPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final districts = schools.map((school) => school.district).toSet().toList()
-      ..sort();
     final selectedDays = filter.to.difference(filter.from).inDays;
     return SectionCard(
       child: Column(

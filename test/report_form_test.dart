@@ -1,4 +1,7 @@
 import 'dart:convert';
+
+import 'package:congressional_app/models/nearby_school.dart';
+
 import 'dart:typed_data';
 
 import 'package:congressional_app/models/hazard_photo.dart';
@@ -22,6 +25,15 @@ void main() {
             selectedLongitude: -88.106632,
             onChooseLocation: () {},
             isLive: true,
+            lookupSchools: (_, _) async => [
+              const NearbySchool(
+                id: '173045003167',
+                name: 'Schaumburg High School',
+                distanceMeters: 25,
+                latitude: 42.027416,
+                longitude: -88.106632,
+              ),
+            ],
             onSubmit: (report, photo, onProgress) async {
               saved = report;
               expect(photo, isNull);
@@ -31,15 +43,24 @@ void main() {
       ),
     );
 
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(TextFormField));
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField),
       'Observed concern for testing the form only',
     );
     await tester.ensureVisible(find.text('Submit unverified report'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Submit unverified report'));
     await tester.pump();
 
     expect(saved, isNotNull);
+    expect(saved!.schoolId, '173045003167');
     expect(saved!.latitude, 42.027416);
     expect(saved!.longitude, -88.106632);
     expect(saved!.status, ReportStatus.unverified);
@@ -56,6 +77,15 @@ void main() {
             selectedLatitude: 42.027416,
             selectedLongitude: -88.106632,
             isLive: true,
+            lookupSchools: (_, _) async => [
+              const NearbySchool(
+                id: '173045003167',
+                name: 'Schaumburg High School',
+                distanceMeters: 25,
+                latitude: 42.027416,
+                longitude: -88.106632,
+              ),
+            ],
             onChooseLocation: () {},
             onSubmit: (_, _, _) async =>
                 throw StateError('Test connection failure'),
@@ -65,6 +95,13 @@ void main() {
     );
 
     const description = 'Observed concern retained after a failed save';
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byType(TextFormField));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), description);
     await tester.tap(find.text('Submit unverified report'));
     await tester.pumpAndSettle();
@@ -98,6 +135,15 @@ void main() {
             selectedLatitude: 42.027416,
             selectedLongitude: -88.106632,
             isLive: true,
+            lookupSchools: (_, _) async => [
+              const NearbySchool(
+                id: '173045003167',
+                name: 'Schaumburg High School',
+                distanceMeters: 25,
+                latitude: 42.027416,
+                longitude: -88.106632,
+              ),
+            ],
             onChooseLocation: () {},
             onSubmit: (_, _, _) async {},
             pickPhoto: (source) async {
@@ -114,20 +160,22 @@ void main() {
       ),
     );
 
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Upload image'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Upload image'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('photo-preview')), findsOneWidget);
     expect(find.text('Replace image'), findsOneWidget);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -350));
+    await tester.ensureVisible(find.text('Replace image'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Replace image'));
     await tester.pumpAndSettle();
     expect(find.textContaining('evidence-2.png'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Remove'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Remove'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('photo-preview')), findsNothing);

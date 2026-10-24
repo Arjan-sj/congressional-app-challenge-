@@ -7,6 +7,11 @@ class AnalyticsRepository {
 
   final SupabaseClient client;
 
+  Future<List<String>> fetchDistricts() async {
+    final values = await client.rpc('analytics_school_districts');
+    return (values as List).cast<String>();
+  }
+
   Future<AnalyticsData> fetch(
     AnalyticsFilter filter, {
     int limit = 1000,
@@ -24,13 +29,21 @@ class AnalyticsRepository {
     );
   }
 
-  Future<List<AnalyticsSchoolOption>> fetchSchools() async {
-    final rows = await client
-        .from('schools')
-        .select('id,name,district,city,state,latitude,longitude')
-        .order('name')
-        .limit(5000);
-    return rows.map(AnalyticsSchoolOption.fromJson).toList(growable: false);
+  Future<List<AnalyticsSchoolOption>> fetchSchools({
+    String query = '',
+    String afterId = '',
+  }) async {
+    final rows = await client.rpc(
+      'search_analytics_schools',
+      params: {'p_query': query, 'p_after_id': afterId, 'p_limit': 100},
+    );
+    return (rows as List)
+        .map(
+          (row) => AnalyticsSchoolOption.fromJson(
+            Map<String, dynamic>.from(row as Map),
+          ),
+        )
+        .toList(growable: false);
   }
 
   RealtimeChannel subscribeToChanges(void Function() onChange) {
