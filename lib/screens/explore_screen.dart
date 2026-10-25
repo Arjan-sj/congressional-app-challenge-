@@ -24,6 +24,7 @@ import '../services/open_route_service.dart';
 import '../services/map_data_service.dart';
 import '../services/map_marker_index.dart';
 import '../services/route_safety_scorer.dart';
+import '../services/route_school_match.dart';
 import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/hazard_photo_view.dart';
@@ -554,10 +555,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
         if (matches == null || matches.isEmpty) {
           return 'School not found. Try the full name or select a map point.';
         }
-        if (matches.length != 1) {
-          return 'Multiple schools found. Use full name or click the map.';
+        final match = RouteSchoolMatch.uniqueBestMatch(value, matches);
+        if (match == null) {
+          return RouteSchoolMatch.ambiguousMessage(matches);
         }
-        location = matches.single.location;
+        location = match.location;
       } catch (_) {
         return 'School lookup failed. Choose a map point.';
       }
