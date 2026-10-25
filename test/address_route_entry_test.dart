@@ -6,6 +6,27 @@ import 'package:congressional_app/services/address_search_service.dart';
 import 'package:congressional_app/widgets/address_route_entry.dart';
 
 void main() {
+  testWidgets('temporary limit retries automatically after the cooldown', (tester) async {
+    var calls = 0;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AddressRouteEntry(
+      label: 'Start location', onSet: (_) async => null,
+      search: (_) async {
+        calls++;
+        if (calls == 1) throw const AddressSearchException('Cooldown', retryAfter: Duration(seconds: 1));
+        return [const AddressSuggestion('123 Main St, Boston, MA', LatLng(42.3, -71.1))];
+      },
+    ))));
+    await tester.enterText(find.byType(TextField), '123 Main St');
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump();
+    expect(find.textContaining('Retrying automatically'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump();
+    expect(calls, 2);
+    expect(find.text('123 Main St, Boston, MA'), findsOneWidget);
+  });
+
   testWidgets('school and coordinate submissions retain the existing lookup path', (tester) async {
     final selected = <String>[];
     var addressCalls = 0;
@@ -48,7 +69,7 @@ void main() {
       ],
     ))));
     await tester.enterText(find.byType(TextField), '123 Main');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump();
     await tester.tap(find.text('Set'));
     await tester.pump();
@@ -69,7 +90,7 @@ void main() {
     await tester.enterText(find.byType(TextField), '123');
     await tester.pump(const Duration(milliseconds: 200));
     await tester.enterText(find.byType(TextField), '123 Main');
-    await tester.pump(const Duration(milliseconds: 449));
+    await tester.pump(const Duration(milliseconds: 699));
     expect(calls, 0);
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump();
@@ -88,17 +109,17 @@ void main() {
           : Future.value([]),
     ))));
     await tester.enterText(find.byType(TextField), 'old address');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'new address');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump();
     old.complete([const AddressSuggestion('Stale address', LatLng(40, -80))]);
     await tester.pump();
     expect(find.text('Stale address'), findsNothing);
     expect(find.textContaining('No addresses found'), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'error address');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump();
     expect(find.text('Search limit reached'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -111,7 +132,7 @@ void main() {
     ))));
     await show(null);
     await tester.enterText(find.byType(TextField), '123 Main');
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     await show(const LatLng(41, -87));
     pending.complete([const AddressSuggestion('Old result', LatLng(40, -80))]);
     await tester.pump();
@@ -133,7 +154,7 @@ void main() {
     await tester.enterText(find.byType(TextField), '123 Replacement St');
     await tester.pump();
     expect(point, isNull);
-    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump(const Duration(milliseconds: 700));
     await tester.pump();
     expect(calls, 1);
     expect(find.textContaining('No addresses found'), findsOneWidget);

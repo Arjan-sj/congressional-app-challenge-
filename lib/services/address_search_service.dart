@@ -8,15 +8,16 @@ class AddressSuggestion {
 }
 
 class AddressSearchException implements Exception {
-  const AddressSearchException(this.message);
+  const AddressSearchException(this.message, {this.retryAfter});
   final String message;
+  final Duration? retryAfter;
   @override
   String toString() => message;
 }
 
 /// Addresses travel only through the server proxy, never a keyed browser URL.
 class AddressSearchService {
-  const AddressSearchService(this.request);
+  AddressSearchService(this.request, {DateTime Function()? now}) : _now = now ?? DateTime.now;
   factory AddressSearchService.supabase(SupabaseClient client) =>
       AddressSearchService((query) async {
         try {
@@ -24,13 +25,22 @@ class AddressSearchService {
             'address-search', body: {'query': query},
           )).data;
         } on FunctionException catch (error) {
-          throw AddressSearchException(error.status == 429
-              ? 'Address search limit reached. Try later or select a map point.'
-              : 'Address search unavailable. Retry or select a map point.');
+          if (error.status == 429) {
+            final details = error.details;
+            final seconds = details is Map && details['retry_after'] is num
+                ? (details['retry_after'] as num).toInt().clamp(1, 86400) : 60;
+            throw AddressSearchException('Search is cooling down. Retrying automatically.',
+                retryAfter: Duration(seconds: seconds));
+          }
+          throw const AddressSearchException('Address search unavailable. Retry or select a map point.');
         }
       });
 
   final Future<dynamic> Function(String) request;
+  final DateTime Function() _now;
+  final _cache = <String, ({DateTime expires, List<AddressSuggestion> results})>{};
+  final _pending = <String, Future<List<AddressSuggestion>>>{};
+  DateTime? _retryAt;
 
   Future<List<AddressSuggestion>> search(String input) async {
     final query = input.trim();
@@ -38,6 +48,32 @@ class AddressSearchService {
     if (query.length > 200) {
       throw const AddressSearchException('Enter an address of at most 200 characters.');
     }
+    final key = query.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    final cached = _cache[key];
+    if (cached != null && cached.expires.isAfter(_now())) return cached.results;
+    final retryAt = _retryAt;
+    if (retryAt != null && retryAt.isAfter(_now())) {
+      throw AddressSearchException('Search is cooling down. Retrying automatically.',
+          retryAfter: retryAt.difference(_now()));
+    }
+    final existing = _pending[key];
+    if (existing != null) return existing;
+    final work = _load(query);
+    _pending[key] = work;
+    try {
+      final results = await work;
+      if (_cache.length >= 24) _cache.remove(_cache.keys.first);
+      _cache[key] = (expires: _now().add(const Duration(minutes: 1)), results: results);
+      return results;
+    } on AddressSearchException catch (error) {
+      if (error.retryAfter != null) _retryAt = _now().add(error.retryAfter!);
+      rethrow;
+    } finally {
+      if (identical(_pending[key], work)) _pending.remove(key);
+    }
+  }
+
+  Future<List<AddressSuggestion>> _load(String query) async {
     try {
       final response = await request(query).timeout(const Duration(seconds: 12));
       if (response is! Map || response['suggestions'] is! List) {
