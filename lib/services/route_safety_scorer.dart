@@ -89,6 +89,30 @@ class RouteSafetyScorer {
       ..sort((a, b) => b.score.compareTo(a.score));
   }
 
+  /// RLS-visible, non-demo active reports close to this route.
+  /// Proximity does not establish a dangerous or blocked path.
+  List<HazardReport> reportsNearRoute(
+    List<LatLng> route,
+    Iterable<HazardReport> reports, {
+    double withinMeters = 150,
+  }) {
+    if (route.isEmpty || withinMeters <= 0) return const [];
+    final matches = reports
+        .where((r) => r.hasLocation && !r.isDemo)
+        .where((r) => r.status == ReportStatus.unverified ||
+            r.status == ReportStatus.verified)
+        .where((r) => _distanceToRoute(
+          LatLng(r.latitude!, r.longitude!), route,
+        ) <= withinMeters)
+        .toList(growable: false);
+    matches.sort((a, b) {
+      final da = _distanceToRoute(LatLng(a.latitude!, a.longitude!), route);
+      final db = _distanceToRoute(LatLng(b.latitude!, b.longitude!), route);
+      return da.compareTo(db);
+    });
+    return matches;
+  }
+
   double _coverage(List<LatLng> route, List<OsmMapFeature> infrastructure) {
     final sampleEvery = math.max(1, (route.length / 150).ceil());
     var samples = 0;
