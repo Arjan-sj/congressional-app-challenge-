@@ -65,7 +65,7 @@ class RoutePlannerPanel extends StatelessWidget {
             children: [
               Icon(Icons.alt_route, color: colors.primary),
               Text(
-                'Compare walking and cycling routes',
+                'Plan your route',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               if (!configured)
@@ -77,7 +77,7 @@ class RoutePlannerPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Tap the map, assign that point as the start or destination, then compare OpenRouteService alternatives that avoid active reports by 100 m.',
+            'Set a start and destination using the map or search boxes below.',
             style: TextStyle(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
@@ -114,7 +114,7 @@ class RoutePlannerPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text('Enter a school name or latitude, longitude. For street addresses, select the point directly on the map.'),
+          const Text('Search school names in any capitalization, or enter coordinates. For street addresses, select a map point.'),
           const SizedBox(height: 14),
           Wrap(
             spacing: 10,
@@ -176,12 +176,12 @@ class RoutePlannerPanel extends StatelessWidget {
                 ),
             const Divider(height: 30),
             Text(
-              'Route alternatives',
+              'Route options',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
             Text(
-              'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − verified unresolved hazards (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
+              'Routes account for verified nearby reports and available mapped infrastructure. Missing map data is not treated as unsafe.',
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
