@@ -45,6 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late List<HazardReport> _reports;
   StreamSubscription<AuthState>? _authSubscription;
   Timer? _reportChangesDebounce;
+  Timer? _membershipPoll;
+  bool _checkingPrivileges = false;
   double? _selectedLatitude;
   double? _selectedLongitude;
   bool _loading = false;
@@ -52,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ReportFlag> _flags = [];
   bool _canModerate = false;
   int _refreshVersion = 0;
+  int _visibilityVersion = 0;
   String? _loadedUserId;
   BuildContext? _reviewContext;
 
@@ -64,6 +67,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _canModerate = false;
     if (widget.liveClient case final client?) {
       if (widget.enableLiveUpdates) {
+        _membershipPoll = Timer.periodic(
+          const Duration(seconds: 20),
+          (_) => _refreshPrivileges(),
+        );
         client
             .channel('home-report-associations')
             .onPostgresChanges(
@@ -95,7 +102,57 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _authSubscription?.cancel();
     _reportChangesDebounce?.cancel();
+    _membershipPoll?.cancel();
     super.dispose();
+  }
+
+  void _clearModeratorAccess() {
+    if (!mounted) return;
+    if (_reviewContext case final reviewContext? when reviewContext.mounted) {
+      Navigator.of(reviewContext).pop();
+    }
+    _reviewContext = null;
+    setState(() {
+      _refreshVersion++;
+      _visibilityVersion++;
+      _canModerate = false;
+      _reports = [];
+      _flags = [];
+      _loading = false;
+      if (_selectedIndex == 4) _selectedIndex = 1;
+    });
+  }
+
+  Future<void> _refreshPrivileges() async {
+    final client = widget.liveClient;
+    if (client == null ||
+        client.auth.currentUser == null ||
+        _checkingPrivileges) {
+      return;
+    }
+    _checkingPrivileges = true;
+    final actor = client.auth.currentUser!.id;
+    try {
+      final allowed = await SupabaseHazardRepository(client)
+          .canModerate()
+          .timeout(const Duration(seconds: 10));
+      if (!mounted || client.auth.currentUser?.id != actor) return;
+      if (allowed != _canModerate) {
+        if (!allowed) _clearModeratorAccess();
+        unawaited(_refreshReports());
+      }
+    } catch (_) {
+      if (mounted && client.auth.currentUser?.id == actor && _canModerate) {
+        _clearModeratorAccess();
+      }
+    } finally {
+      _checkingPrivileges = false;
+    }
+  }
+
+  void _moderationAccessLost() {
+    _clearModeratorAccess();
+    unawaited(_refreshReports());
   }
 
   Future<void> _refreshReports() async {
@@ -108,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Navigator.of(reviewContext).pop();
       }
       _loadedUserId = userId;
+      _visibilityVersion++;
       _reports = [];
       _flags = [];
       _canModerate = false;
@@ -119,9 +177,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     try {
       final repository = SupabaseHazardRepository(client);
+      final initialAccess = await repository.canModerate();
+      if (!mounted || version != _refreshVersion) return;
+      if (_canModerate && !initialAccess) {
+        _clearModeratorAccess();
+        unawaited(_refreshReports());
+        return;
+      }
       final loaded = await repository.fetchHazards();
-      final canModerate = await repository.canModerate();
       final flags = await repository.fetchFlags();
+      final canModerate = await repository.canModerate();
+      if (!mounted || version != _refreshVersion) return;
+      if (initialAccess && !canModerate) {
+        _clearModeratorAccess();
+        unawaited(_refreshReports());
+        return;
+      }
       if (mounted && version == _refreshVersion) {
         setState(() {
           _reports = loaded;
@@ -132,9 +203,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (error) {
       if (mounted && version == _refreshVersion) {
+        if (_canModerate) {
+          _clearModeratorAccess();
+        }
         setState(() {
           _loadError = 'Database connection failed: $error';
-          // Keep the last successful reports on a temporary connection failure.
+          // Protected moderator data is cleared if privileges cannot be checked.
           _flags = [];
           _canModerate = false;
           if (_selectedIndex == 4) _selectedIndex = 1;
@@ -151,6 +225,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final client = widget.liveClient;
     if (client == null) return;
     final actorId = client.auth.currentUser?.id;
+    if (_canModerate && !await SupabaseHazardRepository(client).canModerate()) {
+      _moderationAccessLost();
+      return;
+    }
+    if (!mounted || client.auth.currentUser?.id != actorId) return;
     final canViewHistory =
         _canModerate || report.reporterId == actorId && actorId != null;
     await showDialog<void>(
@@ -163,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
           canViewHistory: canViewHistory,
           loadData: () async {
             final repository = SupabaseHazardRepository(client);
-            final flags = await repository.fetchFlags(report.schoolId);
+            final flags = await repository.fetchFlagsForReport(report.id);
             return ReportReviewData(
               flags: flags.where((f) => f.reportId == report.id).toList(),
               history: await repository.fetchHistory(report.id),
@@ -187,6 +266,28 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
     _reviewContext = null;
+  }
+
+  Future<void> _reviewModerationReport(HazardReport report) async {
+    final client = widget.liveClient;
+    if (client == null) return;
+    final actorId = client.auth.currentUser?.id;
+    try {
+      final details = (await SupabaseHazardRepository(
+        client,
+      ).fetchHazards(reportId: report.id)).firstOrNull;
+      if (!mounted || client.auth.currentUser?.id != actorId) return;
+      if (details == null) {
+        throw StateError('Report is no longer available. Refresh the queue.');
+      }
+      if (mounted) await _reviewReport(details);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to open report: $error')),
+        );
+      }
+    }
   }
 
   Future<void> _flagReport(
@@ -236,8 +337,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (client.auth.currentUser?.id != actorId) {
       throw StateError('Your account changed. Reopen this report.');
     }
-    final saved = await SupabaseHazardRepository(client)
-        .moderateReport(report, status, reason);
+    late HazardReport saved;
+    try {
+      saved = await SupabaseHazardRepository(client)
+          .moderateReport(report, status, reason);
+    } on PostgrestException catch (error) {
+      if (error.code == '42501') _moderationAccessLost();
+      rethrow;
+    }
     if (!mounted || client.auth.currentUser?.id != actorId) {
       return;
     }
@@ -246,7 +353,10 @@ class _HomeScreenState extends State<HomeScreen> {
       // Discard refreshes that captured the report before this decision.
       _refreshVersion++;
       _loading = false;
-      _reports = _reports.map((r) => r.id == saved.id ? saved : r).toList();
+      _reports = [
+        if (!_reports.any((r) => r.id == saved.id)) saved,
+        ..._reports.map((r) => r.id == saved.id ? saved : r),
+      ];
       _flags = _flags
           .map((f) => f.reportId == saved.id ? f.reviewed(now) : f)
           .toList();
@@ -361,6 +471,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onReportAt: _startReport,
         onSelectLocation: _selectLocation,
         enableMapTiles: widget.enableMapTiles,
+        visibilityVersion: _visibilityVersion,
         isLive: _live,
         showMapTextAlternative: widget.accessibilityPreferences.showMapText,
         enableKeyboardNavigation:
@@ -372,6 +483,7 @@ class _HomeScreenState extends State<HomeScreen> {
         isActive: _selectedIndex == 2,
         enableMapTiles: widget.enableMapTiles,
         refreshVersion: _refreshVersion,
+        visibilityVersion: _visibilityVersion,
       ),
       ReportFormScreen(
         lookupSchools: widget.liveClient == null
@@ -388,7 +500,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ModerationScreen(
           reports: _reports,
           flags: _flags,
-          onReview: _reviewReport,
+          onReview: _reviewModerationReport,
+          client: widget.liveClient,
+          isActive: _selectedIndex == 4,
+          refreshVersion: _refreshVersion,
+          onAccessLost: _moderationAccessLost,
         ),
     ];
 

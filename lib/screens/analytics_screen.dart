@@ -34,12 +34,14 @@ class AnalyticsScreen extends StatefulWidget {
     required this.isActive,
     this.enableMapTiles = true,
     this.refreshVersion = 0,
+    this.visibilityVersion = 0,
   });
 
   final SupabaseClient? client;
   final bool isActive;
   final bool enableMapTiles;
   final int refreshVersion;
+  final int visibilityVersion;
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -81,13 +83,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   void didUpdateWidget(covariant AnalyticsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.visibilityVersion != oldWidget.visibilityVersion) {
+      _loadVersion++;
+      _data = null;
+    }
     if (widget.isActive && !oldWidget.isActive) {
       _startLiveAnalytics();
     }
     if (widget.isActive &&
         _repository != null &&
         (!oldWidget.isActive ||
-            widget.refreshVersion != oldWidget.refreshVersion)) {
+            widget.refreshVersion != oldWidget.refreshVersion ||
+            widget.visibilityVersion != oldWidget.visibilityVersion)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_load());
       });
@@ -100,6 +107,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _repository = AnalyticsRepository(client);
     _repository!.subscribeToChanges(_onRealtimeChange);
     _authSubscription = client.auth.onAuthStateChange.listen((_) {
+      _loadVersion++;
+      _data = null;
       unawaited(_load());
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -167,6 +176,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final repository = _repository;
     final current = _data;
     if (repository == null || current == null || _loadingMore) return;
+    final version = _loadVersion;
     setState(() => _loadingMore = true);
     try {
       final next = await repository.fetch(
@@ -174,7 +184,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         limit: 500,
         offset: current.markers.length,
       );
-      if (!mounted) return;
+      if (!mounted || version != _loadVersion) return;
       setState(() {
         _data = current.withMarkers([
           ...current.markers,
@@ -195,6 +205,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       throw StateError('Analytics are not available.');
     }
     AnalyticsData current = startingData;
+    final version = _loadVersion;
     final markers = [...current.markers];
     var hasMore = current.pagination.hasMore;
     while (hasMore) {
@@ -203,6 +214,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         limit: 1000,
         offset: markers.length,
       );
+      if (!mounted || version != _loadVersion) {
+        throw StateError(
+          'Analytics permissions or filters changed. Export again.',
+        );
+      }
       markers.addAll(next.markers);
       current = current.withMarkers(markers, next.pagination);
       hasMore = next.pagination.hasMore;
@@ -262,6 +278,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Future<void> _showExportDialog() async {
     final current = _data;
     if (current == null) return;
+    final version = _loadVersion;
     var format = AnalyticsExportFormat.pdf;
     final datasets = AnalyticsDataset.values.toSet();
     final request =
@@ -356,6 +373,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
         );
     if (request == null) return;
+    if (version != _loadVersion) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permissions or filters changed. Open the export again.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _exporting = true);
     try {
       final complete = request.datasets.contains(AnalyticsDataset.hazards)

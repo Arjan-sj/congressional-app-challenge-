@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:congressional_app/app.dart';
 import 'package:congressional_app/screens/report_review_dialog.dart';
+import 'package:congressional_app/screens/reports_screen.dart';
+import 'package:congressional_app/models/hazard_report.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -14,9 +16,24 @@ String encoded(Object value) =>
 
 Future<SupabaseClient> testClient({
   required bool moderator,
+  bool Function()? membership,
   Future<http.Response?> Function(http.Request)? intercept,
 }) async {
   const userId = '10000000-0000-0000-0000-000000000001';
+  var serverReport = <String, dynamic>{
+    'id': '20000000-0000-0000-0000-000000000001',
+    'reporter_id': userId,
+    'school_id': 'sample-school',
+    'school': {'name': 'Nationwide test school'},
+    'type': 'blocked_path',
+    'severity': 3,
+    'description': 'Private pending example',
+    'status': 'unverified',
+    'latitude': 42.0,
+    'longitude': -88.0,
+    'is_demo': false,
+    'created_at': '2026-10-18T00:00:00Z',
+  };
   final token =
       '${encoded({'alg': 'HS256', 'typ': 'JWT'})}.${encoded({'sub': userId, 'role': 'authenticated', 'exp': 4102444800})}.test-signature';
   final client = SupabaseClient(
@@ -25,7 +42,16 @@ Future<SupabaseClient> testClient({
     authOptions: const AuthClientOptions(autoRefreshToken: false),
     httpClient: MockClient((request) async {
       final intercepted = await intercept?.call(request);
-      if (intercepted != null) return intercepted;
+      if (intercepted != null) {
+        if (request.url.path.endsWith('/rpc/moderate_hazard_report') &&
+            intercepted.statusCode == 200) {
+          serverReport = {
+            ...serverReport,
+            ...jsonDecode(intercepted.body) as Map<String, dynamic>,
+          };
+        }
+        return intercepted;
+      }
       final signedIn = request.headers['Authorization'] == 'Bearer $token';
       final path = request.url.path;
       Object body;
@@ -46,25 +72,49 @@ Future<SupabaseClient> testClient({
       } else if (path.endsWith('/logout')) {
         return http.Response('', 204, request: request);
       } else if (path.endsWith('/rpc/is_report_moderator')) {
-        body = moderator && signedIn;
+        body = (membership?.call() ?? moderator) && signedIn;
+      } else if (path.endsWith('/rpc/get_moderation_queue')) {
+        if (!(membership?.call() ?? moderator) || !signedIn) {
+          return http.Response(
+            jsonEncode({
+              'code': '42501',
+              'message': 'Moderator access required',
+            }),
+            403,
+            request: request,
+          );
+        }
+        final p = jsonDecode(request.body) as Map<String, dynamic>;
+        final q = p['p_queue'];
+        final match =
+            q == 'all' ||
+            serverReport['status'] == (q == 'pending' ? 'unverified' : q);
+        body = {
+          'items': [
+            if (match)
+              {
+                'report': serverReport,
+                'district_name': 'Test district',
+                'school_city': 'Test city',
+                'school_state': 'IL',
+                'open_flags': 0,
+              },
+          ],
+          'counts': {
+            'pending': serverReport['status'] == 'unverified' ? 1 : 0,
+            'verified': serverReport['status'] == 'verified' ? 1 : 0,
+            'flagged': 0,
+            'resolved': 0,
+            'rejected': 0,
+            'all': 1,
+          },
+          'total': match ? 1 : 0,
+          'limit': 25,
+          'offset': 0,
+          'has_more': false,
+        };
       } else if (path.endsWith('/hazard_reports')) {
-        body = signedIn
-            ? [
-                {
-                  'id': '20000000-0000-0000-0000-000000000001',
-                  'reporter_id': userId,
-                  'school_id': 'sample-school',
-                  'type': 'blocked_path',
-                  'severity': 3,
-                  'description': 'Private pending example',
-                  'status': 'unverified',
-                  'latitude': 42.0,
-                  'longitude': -88.0,
-                  'is_demo': true,
-                  'created_at': '2026-10-18T00:00:00Z',
-                },
-              ]
-            : [];
+        body = signedIn ? [serverReport] : [];
       } else if (path.endsWith('/hazard_report_photos') ||
           path.endsWith('/report_flags') ||
           path.endsWith('/report_moderation_history')) {
@@ -138,7 +188,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Moderation'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Review report'));
+    await tester.scrollUntilVisible(
+      find.text('Review report'),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('moderation-queue-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Review report'));
     await tester.pumpAndSettle();
@@ -161,7 +220,10 @@ void main() {
         () => testClient(
           moderator: true,
           intercept: (request) async {
-            if (request.url.path.endsWith('/hazard_reports') && holdRefresh) {
+            if (request.url.path.endsWith('/hazard_reports') &&
+                holdRefresh &&
+                !(request.url.queryParameters['id']?.startsWith('eq.') ??
+                    false)) {
               return pending.future;
             }
             if (request.url.path.endsWith('/rpc/moderate_hazard_report')) {
@@ -209,7 +271,16 @@ void main() {
       holdRefresh = true;
       await tester.tap(find.byTooltip('Refresh reports'));
       await tester.pump();
-      await tester.ensureVisible(find.text('Review report'));
+      await tester.scrollUntilVisible(
+        find.text('Review report'),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('moderation-queue-scroll')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text('Review report'));
       for (var frame = 0; frame < 5; frame++) {
@@ -235,9 +306,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Verified'));
-      await tester.pumpAndSettle();
-      expect(find.text('Reviewed example'), findsOneWidget);
+      final reportList = tester.widget<ReportsScreen>(
+        find.byType(ReportsScreen, skipOffstage: false),
+      );
+      expect(reportList.reports.single.description, 'Reviewed example');
+      expect(reportList.reports.single.status, ReportStatus.verified);
       expect(tester.takeException(), isNull);
     },
   );

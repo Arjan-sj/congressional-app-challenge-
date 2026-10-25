@@ -45,6 +45,7 @@ class ExploreScreen extends StatefulWidget {
     this.enableKeyboardNavigation = false,
     this.mapDataService,
     this.tileProvider,
+    this.visibilityVersion = 0,
   });
 
   final List<HazardReport> reports;
@@ -59,6 +60,7 @@ class ExploreScreen extends StatefulWidget {
   /// Inject a scheduler for deterministic integration tests. Explore owns it.
   final MapDataService? mapDataService;
   final TileProvider? tileProvider;
+  final int visibilityVersion;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -83,6 +85,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<School> _searchMatches = [];
   String? _selectedSchoolId;
   String? _hazardError;
+  bool _pendingHazardPermissionRefresh = false;
   String? _tileError;
   int _tileGeneration = 0;
   bool _diagnostics = false;
@@ -142,6 +145,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   List<HazardReport> _routeReports = [];
   List<HazardReport> get _allMapReports {
+    if (_pendingHazardPermissionRefresh) return widget.reports;
     final data = _mapData;
     if (data == null || !data.hazards.hasData) return widget.reports;
     return [
@@ -261,7 +265,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void didUpdateWidget(covariant ExploreScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.reports, widget.reports)) {
+    if (oldWidget.visibilityVersion != widget.visibilityVersion) {
+      _pendingHazardPermissionRefresh = true;
+      _routeReports = [];
+      _routeAssessments = [];
+      _routeAvoidLocations = [];
+      _routeRequestVersion++;
+      _loadingRoutes = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _mapData?.invalidateHazards(clear: true);
+        setState(() => _pendingHazardPermissionRefresh = false);
+      });
+    } else if (!identical(oldWidget.reports, widget.reports)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _mapData?.invalidateHazards();
       });
@@ -967,6 +983,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
           ),
       if (_visibleLayers.contains(MapLayer.hazards) &&
+          !_pendingHazardPermissionRefresh &&
           _mapData?.hazards.data.clustered == true)
         for (final row in _mapData!.hazards.data.items)
           Marker(

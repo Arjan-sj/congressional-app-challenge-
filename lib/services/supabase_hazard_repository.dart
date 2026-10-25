@@ -222,27 +222,57 @@ class SupabaseHazardRepository {
   }
 
   Future<List<ReportFlag>> fetchFlags([String? schoolId]) async {
+    return _fetchFlags(schoolId: schoolId);
+  }
+
+  Future<List<ReportFlag>> fetchFlagsForReport(String reportId) =>
+      _fetchFlags(reportId: reportId);
+  Future<List<ReportFlag>> _fetchFlags({
+    String? schoolId,
+    String? reportId,
+  }) async {
     if (client.auth.currentUser == null) return [];
-    var query = client
-        .from('report_flags')
-        .select(
-          'report_id,user_id,reason,created_at,reviewed_at,hazard_reports!inner(school_id)',
-        );
-    if (schoolId != null) {
-      query = query.eq('hazard_reports.school_id', schoolId);
+    final rows = <Map<String, dynamic>>[];
+    String? after;
+    while (true) {
+      var query = client
+          .from('report_flags')
+          .select(
+            'id,report_id,user_id,reason,created_at,reviewed_at,hazard_reports!inner(school_id)',
+          );
+      if (schoolId != null) {
+        query = query.eq('hazard_reports.school_id', schoolId);
+      }
+      if (reportId != null) query = query.eq('report_id', reportId);
+      if (after != null) query = query.gt('id', after);
+      final page = await query.order('id').limit(500);
+      rows.addAll(page);
+      if (page.length < 500) break;
+      after = page.last['id'] as String;
     }
-    final rows = await query.order('created_at', ascending: false);
-    return rows.map(ReportFlag.fromRow).toList();
+    return rows.map(ReportFlag.fromRow).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   Future<List<ModerationEvent>> fetchHistory(String reportId) async {
     if (client.auth.currentUser == null) return [];
-    final rows = await client
-        .from('report_moderation_history')
-        .select('report_id,actor_id,previous_status,status,reason,created_at')
-        .eq('report_id', reportId)
-        .order('created_at', ascending: false);
-    return rows.map(ModerationEvent.fromRow).toList();
+    final rows = <Map<String, dynamic>>[];
+    String? after;
+    while (true) {
+      var query = client
+          .from('report_moderation_history')
+          .select(
+            'id,report_id,actor_id,previous_status,status,reason,created_at',
+          )
+          .eq('report_id', reportId);
+      if (after != null) query = query.gt('id', after);
+      final page = await query.order('id').limit(500);
+      rows.addAll(page);
+      if (page.length < 500) break;
+      after = page.last['id'] as String;
+    }
+    return rows.map(ModerationEvent.fromRow).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   Future<void> flagReport(HazardReport report, String reason) async {
@@ -271,7 +301,10 @@ class SupabaseHazardRepository {
           },
         )
         .single();
-    final saved = HazardCodec.fromRow(row);
+    final saved = HazardCodec.fromRow({
+      ...row,
+      'school': {'name': report.schoolName},
+    });
     return saved.withPhoto(
       path: report.photoPath,
       signedUrl: report.photoSignedUrl,

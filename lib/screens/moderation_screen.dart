@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'live_moderation_screen.dart';
 
 import '../models/hazard_report.dart';
 import '../models/report_moderation.dart';
@@ -10,11 +13,19 @@ class ModerationScreen extends StatefulWidget {
     required this.reports,
     required this.flags,
     required this.onReview,
+    this.client,
+    this.isActive = true,
+    this.refreshVersion = 0,
+    this.onAccessLost,
   });
 
   final List<HazardReport> reports;
   final List<ReportFlag> flags;
   final ValueChanged<HazardReport> onReview;
+  final SupabaseClient? client;
+  final bool isActive;
+  final int refreshVersion;
+  final VoidCallback? onAccessLost;
 
   @override
   State<ModerationScreen> createState() => _ModerationScreenState();
@@ -25,6 +36,15 @@ class _ModerationScreenState extends State<ModerationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.client case final client?) {
+      return LiveModerationScreen(
+        client: client,
+        onReview: widget.onReview,
+        onAccessLost: widget.onAccessLost ?? () {},
+        isActive: widget.isActive,
+        refreshVersion: widget.refreshVersion,
+      );
+    }
     final flaggedIds = widget.flags
         .where((f) => f.isOpen)
         .map((f) => f.reportId)

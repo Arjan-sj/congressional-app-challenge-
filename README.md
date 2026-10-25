@@ -24,6 +24,9 @@ and reproducible synthetic fixtures. Production resets are blocked.
 For verified NCES public-school district relationships, see the
 [Phase 2 district schema, preview and reviewed backfill workflow](docs/SCHOOL_DISTRICTS.md).
 
+For trusted moderator provisioning/revocation, paginated nationwide review queues
+and permission-refresh behavior, see the [Phase 4 moderation workflow](docs/MODERATION.md).
+
 ## Run locally (macOS or Linux)
 
 Install [Flutter](https://docs.flutter.dev/get-started/install), Git, and Google Chrome first. Then:
