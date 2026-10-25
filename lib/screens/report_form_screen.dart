@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/nearby_school.dart';
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
+import '../services/community_repository.dart';
 import '../widgets/app_ui.dart';
 
 class ReportFormScreen extends StatefulWidget {
@@ -50,7 +51,9 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   NearbySchool? _school;
   bool _lookingUpSchool = false;
   String? _schoolError;
+  String? _saveError;
   int _lookupVersion = 0;
+  String? _draftId, _draftFingerprint;
 
   @override
   void initState() {
@@ -171,12 +174,25 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
     }
     setState(() {
       _saving = true;
+      _saveError = null;
       _uploadProgress = _photo == null ? null : 0;
     });
     try {
+      final fingerprint = [
+        widget.selectedLatitude,
+        widget.selectedLongitude,
+        _type,
+        _severity,
+        _descriptionController.text.trim(),
+        _photo?.bytes.hashCode,
+      ].join('|');
+      if (_draftFingerprint != fingerprint) {
+        _draftFingerprint = fingerprint;
+        _draftId = CommunityRepository.newReportId();
+      }
       await widget.onSubmit(
         HazardReport(
-          id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+          id: _draftId!,
           schoolId: _school!.id,
           type: _type,
           severity: _severity.round(),
@@ -196,6 +212,8 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
 
       if (!mounted) return;
       _descriptionController.clear();
+      _draftId = null;
+      _draftFingerprint = null;
       _formKey.currentState?.reset();
       setState(() {
         _type = HazardType.missingSidewalk;
@@ -206,8 +224,10 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not save: $error')));
+        setState(
+          () => _saveError =
+              'Could not save: ${error is StateError ? error.message : 'Check your connection and retry the same report.'}',
+        );
       }
     } finally {
       if (mounted) {
@@ -260,7 +280,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                               Expanded(
                                 child: Text(
                                   widget.isLive
-                                      ? 'Reports are saved as unverified until a moderator reviews them. Never include student names, home addresses, or recurring travel details.'
+                                      ? 'Your report and optional photo will be public. Three agreeing community reviews are required to change its status. Never include student names, home addresses, identifiable children or recurring travel details.'
                                       : 'Supabase is not configured, so report submission is unavailable. The map and route tools remain usable.',
                                   style: const TextStyle(
                                     color: Color(0xFF604300),
@@ -639,6 +659,14 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
               ],
             ),
           ),
+          if (_saveError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(_saveError!, style: TextStyle(color: colors.error)),
+              ),
+            ),
           Container(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
             decoration: BoxDecoration(

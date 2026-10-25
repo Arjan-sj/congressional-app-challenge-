@@ -12,7 +12,7 @@ enum HazardType {
 
 enum ReportStatus {
   unverified('Unverified'),
-  verified('Verified'),
+  verified('Reviewed'),
   resolved('Resolved'),
   rejected('Rejected');
 

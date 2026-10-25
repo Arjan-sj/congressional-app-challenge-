@@ -78,7 +78,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   final MapController _controller = MapController();
   MapDataService? _mapData;
-  StreamSubscription<AuthState>? _mapAuth;
   Timer? _hazardRefresh;
   Timer? _searchDebounce;
   Timer? _cameraDebounce;
@@ -138,9 +137,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       data.schools.addListener(_schoolDataChanged);
       data.hazards.addListener(_hazardDataChanged);
       data.infrastructure.addListener(_infrastructureDataChanged);
-      _mapAuth = widget.liveClient?.auth.onAuthStateChange.listen((_) {
-        data.invalidateHazards(clear: true);
-      });
       _hazardRefresh = Timer.periodic(const Duration(seconds: 30), (_) {
         if (_visibleBounds != null) _scheduleViewport();
       });
@@ -257,7 +253,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _searchDebounce?.cancel();
     _cameraDebounce?.cancel();
     _hazardRefresh?.cancel();
-    _mapAuth?.cancel();
     _mapData?.dispose();
     _controller.dispose();
     _routeService.close();
@@ -734,13 +729,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   Future<void> _showReportDetails(HazardReport report) async {
     final client = widget.liveClient;
-    final userId = client?.auth.currentUser?.id;
     if (client != null) {
       try {
         final loaded = await SupabaseHazardRepository(client)
             .fetchHazards(reportId: report.id)
             .timeout(const Duration(seconds: 12));
-        if (!mounted || userId != client.auth.currentUser?.id) return;
+        if (!mounted) return;
         if (loaded.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -752,7 +746,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         }
         report = loaded.single;
       } catch (_) {
-        if (!mounted || userId != client.auth.currentUser?.id) return;
+        if (!mounted) return;
       }
     }
     if (!mounted) return;

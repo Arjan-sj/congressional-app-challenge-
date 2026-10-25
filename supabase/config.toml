@@ -4,3 +4,14 @@ verify_jwt = false
 [functions.route-directions]
 # The handler validates the project key and any signed-in user itself.
 verify_jwt = false
+
+[functions.account-auth]
+# Retired endpoint always returns 410; retained for old installed clients.
+verify_jwt = false
+
+[functions.community-reports]
+# Public project key validation; all writes go through the bounded service RPC.
+verify_jwt = false
+
+[auth]
+enable_signup = false

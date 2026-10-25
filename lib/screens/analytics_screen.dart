@@ -51,7 +51,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final _schoolSearchController = TextEditingController();
   final _exportService = const AnalyticsExportService();
   AnalyticsRepository? _repository;
-  StreamSubscription<AuthState>? _authSubscription;
   Timer? _realtimeDebounce;
   Timer? _mapDebounce;
   late AnalyticsFilter _filter;
@@ -106,11 +105,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     if (client == null || _repository != null) return;
     _repository = AnalyticsRepository(client);
     _repository!.subscribeToChanges(_onRealtimeChange);
-    _authSubscription = client.auth.onAuthStateChange.listen((_) {
-      _loadVersion++;
-      _data = null;
-      unawaited(_load());
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });
@@ -121,7 +115,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _schoolSearchController.dispose();
     _realtimeDebounce?.cancel();
     _mapDebounce?.cancel();
-    _authSubscription?.cancel();
     // The Supabase client owns channel teardown. Explicitly removing a channel
     // here starts a delayed socket-disconnect timer in realtime_client, which
     // can outlive Flutter's widget lifecycle and test binding.
@@ -775,7 +768,7 @@ class _OverviewGrid extends StatelessWidget {
         '',
       ),
       (
-        'Verified',
+        'Reviewed',
         current.verified.toDouble(),
         previous.verified.toDouble(),
         Icons.verified_outlined,
@@ -1465,7 +1458,7 @@ class _SchoolStackedChart extends StatelessWidget {
     final schools = data.schools.take(6).toList();
     return _ChartCard(
       title: 'Schools compared',
-      subtitle: 'Pending, verified, and resolved hazards',
+      subtitle: 'Pending, reviewed, and resolved concerns',
       child: schools.isEmpty
           ? const _ChartEmpty()
           : BarChart(

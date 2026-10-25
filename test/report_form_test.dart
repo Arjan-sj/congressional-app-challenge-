@@ -66,6 +66,7 @@ void main() {
   testWidgets('Failed live save keeps the description available for retry', (
     tester,
   ) async {
+    final attemptedIds = <String>[];
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -83,8 +84,10 @@ void main() {
               ),
             ],
             onChooseLocation: () {},
-            onSubmit: (_, _, _) async =>
-                throw StateError('Test connection failure'),
+            onSubmit: (report, _, _) async {
+              attemptedIds.add(report.id);
+              throw StateError('Test connection failure');
+            },
           ),
         ),
       ),
@@ -100,6 +103,16 @@ void main() {
 
     expect(find.textContaining('Could not save:'), findsOneWidget);
     expect(find.text(description), findsOneWidget);
+    await tester.ensureVisible(find.text('Submit unverified report'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Submit unverified report'));
+    await tester.pumpAndSettle();
+    expect(attemptedIds.length, 2);
+    expect(
+      attemptedIds[0],
+      attemptedIds[1],
+      reason: 'A retry must reuse the report UUID instead of inserting another report',
+    );
     expect(
       tester
           .widget<FilledButton>(
