@@ -63,3 +63,32 @@ test('CORS preflight succeeds without credentials, GET is rejected',async()=>{
  assert.equal((await handler(new Request('https://edge',{method:'OPTIONS'}))).status,200);
  assert.equal((await handler(new Request('https://edge'))).status,405);
 });
+test('Highschool uses the existing school directory and returns its official street address',async()=>{
+ let providerCalls=0;
+ const fetcher:typeof fetch=async(input,init)=>{
+  const url=String(input);
+  if(url.endsWith('/settings'))return Response.json({});
+  if(url.includes('claim_address_request'))return Response.json({granted:true});
+  if(url.endsWith('/search_schools')){
+   assert.deepEqual(JSON.parse(String(init?.body)),{search_text:'Schaumburg High school',state_code:null});
+   return Response.json([{name:'Schaumburg High School',address:'1100 W Schaumburg Rd',city:'Schaumburg',state:'IL',zip_code:'60194',latitude:42.027416,longitude:-88.106632}]);
+  }
+  providerCalls++;throw Error('Geocoder must not be needed');
+ };
+ const response=await createAddressHandler(settings,fetcher)(request('Schaumburg Highschool'));
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{suggestions:[{label:'Schaumburg High School, 1100 W Schaumburg Rd, Schaumburg, IL, 60194',latitude:42.027416,longitude:-88.106632}]});
+ assert.equal(providerCalls,0);
+});
+test('unavailable school directory falls back to geocoding with normalized words',async()=>{
+ const fetcher:typeof fetch=async(input)=>{
+  const url=String(input);
+  if(url.endsWith('/settings'))return Response.json({});
+  if(url.includes('claim_address_request'))return Response.json({granted:true});
+  if(url.endsWith('/search_schools'))throw Error('Directory outage');
+  assert.equal(new URL(url).searchParams.get('text'),'Schaumburg High school');
+  return Response.json({features:[feature]});
+ };
+ const response=await createAddressHandler(settings,fetcher)(request('Schaumburg Highschool'));
+ assert.equal(response.status,200);assert.equal((await response.json()).suggestions.length,1);
+});

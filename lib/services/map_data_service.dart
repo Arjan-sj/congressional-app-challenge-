@@ -14,6 +14,7 @@ import '../models/infrastructure_availability.dart';
 import '../models/osm_infrastructure.dart';
 import '../models/school.dart';
 import 'hazard_codec.dart';
+import 'route_school_match.dart';
 
 typedef MapRpc = Future<dynamic> Function(
   String name,
@@ -859,7 +860,7 @@ class MapDataService {
   }
 
   Future<List<School>> search(String text, String? state) async =>
-      (await _call('search_schools', {'search_text': text, 'state_code': state})
+      (await _call('search_schools', {'search_text': RouteSchoolMatch.searchText(text), 'state_code': state})
               as List)
           .map((row) => schoolFromRow(Map<String, dynamic>.from(row)))
           .toList();

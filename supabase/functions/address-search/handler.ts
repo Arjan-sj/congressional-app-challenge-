@@ -78,6 +78,33 @@ export function createAddressHandler(settings: Settings, transport: typeof fetch
       if (!claim.ok) return reply(503, "Address search unavailable");
       const quota = await claim.json();
       if (quota.granted !== true) return reply(429, "Address search limit reached. Try later or select a map point.", Math.max(1, Math.min(86400, Number(quota.retry_after) || 60)));
+      // Reuse the nationwide NCES directory for named schools. Its official
+      // address avoids locality aliases and missing venues in the geocoder.
+      query = query.replace(/\b(high|middle|elementary)school\b/gi, "$1 school");
+      if (!/^\d/.test(query) && /\bschool\b/i.test(query)) {
+        try {
+          const directory = await transport(`${settings.supabaseUrl}/rest/v1/rpc/search_schools`, {
+            method: "POST",
+            headers: {apikey: apiKey, "Content-Type": "application/json"},
+            body: JSON.stringify({search_text: query, state_code: null}),
+            signal: AbortSignal.timeout(2500),
+          });
+          if (directory.ok) {
+            const rows = await directory.json();
+            if (Array.isArray(rows)) {
+              const suggestions = rows.slice(0, 5).flatMap((row) => {
+                if (typeof row?.name !== "string" || !row.name.trim() ||
+                    typeof row.latitude !== "number" || !Number.isFinite(row.latitude) || Math.abs(row.latitude) > 90 ||
+                    typeof row.longitude !== "number" || !Number.isFinite(row.longitude) || Math.abs(row.longitude) > 180) return [];
+                const label = [row.name, row.address, row.city, row.state, row.zip_code]
+                  .filter((part) => typeof part === "string" && part.trim()).join(", ");
+                return label.length > 500 ? [] : [{label, latitude: row.latitude, longitude: row.longitude}];
+              });
+              if (suggestions.length) return new Response(JSON.stringify({suggestions}), {headers: cors});
+            }
+          }
+        } catch { /* Directory outages fall back to the address provider. */ }
+      }
       const url = new URL("https://api.openrouteservice.org/geocode/autocomplete");
       url.search = new URLSearchParams({api_key: settings.orsKey, text: query, "boundary.country": "USA", size: "5"}).toString();
       const upstream = await transport(url, {signal: AbortSignal.timeout(8000)});

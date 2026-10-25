@@ -173,7 +173,7 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
         ListTile(title: Text(suggestion.label), leading: const Icon(Icons.place_outlined),
           onTap: () => submit(suggestion)),
       if (suggestions.isNotEmpty)
-        const Text('Geocoding: OpenRouteService / Pelias. Data: OpenStreetMap contributors, OpenAddresses, GeoNames, Who’s On First.'),
+        const Text('Schools: NCES. Geocoding: OpenRouteService / Pelias. Data: OpenStreetMap contributors, OpenAddresses, GeoNames, Who’s On First.'),
       if (message != null) Text(message!, semanticsLabel: message),
       if (widget.search == null)
         const Text('Address search unavailable. Use a school name, coordinates or the map.'),
