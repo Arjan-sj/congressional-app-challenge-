@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:congressional_app/app.dart';
+import 'package:congressional_app/screens/account_page.dart';
 import 'package:congressional_app/screens/report_review_dialog.dart';
 import 'package:congressional_app/screens/reports_screen.dart';
 import 'package:congressional_app/models/hazard_report.dart';
@@ -138,6 +139,99 @@ Future<SupabaseClient> testClient({
 }
 
 void main() {
+  testWidgets(
+    'Auth refresh errors clear protected Home data and recovery opens one password page',
+    (tester) async {
+      final client = (await tester.runAsync(
+        () => testClient(
+          moderator: true,
+          intercept: (request) async {
+            final path = request.url.path;
+            Object? body;
+            if (path.endsWith('/user')) {
+              body = {
+                'id': '10000000-0000-0000-0000-000000000001',
+                'aud': 'authenticated',
+                'created_at': '2026-10-18T00:00:00Z',
+                'email': 'synthetic@example.test',
+                'app_metadata': {},
+                'user_metadata': {},
+              };
+            } else if (path.endsWith('/user_profiles') ||
+                path.endsWith('/moderator_access_requests')) {
+              body = [];
+            }
+            return body == null
+                ? null
+                : http.Response(
+                    jsonEncode(body),
+                    200,
+                    request: request,
+                    headers: {'content-type': 'application/json'},
+                  );
+          },
+        ),
+      ))!;
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(client.dispose);
+      });
+      await tester.pumpWidget(
+        SafeRoutesApp(
+          enableMapTiles: false,
+          liveClient: client,
+          enableLiveUpdates: false,
+          persistAccessibilityPreferences: false,
+        ),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ReportsScreen>(
+              find.byType(ReportsScreen, skipOffstage: false),
+            )
+            .reports,
+        isNotEmpty,
+      );
+      // Reproduce the SDK's retryable refresh notification without network retries.
+      // ignore: invalid_use_of_internal_member
+      client.auth.notifyException(
+        AuthRetryableFetchException(message: 'Synthetic temporary outage'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ReportsScreen>(
+              find.byType(ReportsScreen, skipOffstage: false),
+            )
+            .reports,
+        isEmpty,
+      );
+      expect(
+        find.textContaining('Session could not be refreshed'),
+        findsOneWidget,
+      );
+      // The same event is replayed to late listeners by the SDK at cold startup.
+      // ignore: invalid_use_of_internal_member
+      client.auth.notifyAllSubscribers(AuthChangeEvent.passwordRecovery);
+      // ignore: invalid_use_of_internal_member
+      client.auth.notifyAllSubscribers(AuthChangeEvent.passwordRecovery);
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountPage, skipOffstage: false), findsOneWidget);
+      expect(
+        find.textContaining('Set a new password before continuing'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   for (final moderator in [false, true]) {
     testWidgets('live moderator tab follows server membership: $moderator', (
       tester,

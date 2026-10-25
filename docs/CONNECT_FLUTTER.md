@@ -34,8 +34,9 @@ Routing uses the `route-directions` Supabase Edge Function and its server-only
 [server routing setup](ROUTING_PROXY.md).
 
 Supabase → Authentication → URL Configuration: allow `http://localhost:7357`
-as a redirect URL for testing email confirmation. Email provider must be
-enabled; keep signup limited to internal testers during this pilot.
+as a redirect URL for testing email confirmation. Enable the email provider and
+email confirmation. Deploy the Phase 9 migration and `account-auth` Edge Function
+before testing account flows; see [account setup and native callbacks](ACCOUNTS.md).
 
 In SafeRoutes, open the account icon, create or sign in to a test account.
 Select a map location and submit an observation without personal information. It will persist as

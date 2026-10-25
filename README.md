@@ -34,6 +34,10 @@ For verified NCES public-school district relationships, see the
 For trusted moderator provisioning/revocation, paginated nationwide review queues
 and permission-refresh behavior, see the [Phase 4 moderation workflow](docs/MODERATION.md).
 
+Email or optional username sign-in, verified registration, recovery, account settings
+and trusted moderator application review are documented in
+[Phase 9 accounts and deployment](docs/ACCOUNTS.md).
+
 ## Run locally (macOS or Linux)
 
 Install [Flutter](https://docs.flutter.dev/get-started/install), Git, and Google Chrome first. Then:

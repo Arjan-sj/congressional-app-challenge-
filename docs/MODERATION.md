@@ -2,6 +2,13 @@
 
 Moderation reuses Supabase Auth, `public.report_moderators`, the existing `moderate_hazard_report` RPC, report flags, photo evidence and append-only decision history. Ordinary users and moderators cannot administer memberships. No real account, invitation or permission is created by this implementation.
 
+Phase 9 extends this same trusted workflow with pending moderator applications.
+Approvals call the existing membership grant mechanism and record a separate
+application review audit. See [accounts, application review and optional development bootstrap](ACCOUNTS.md)
+for the additive migration, commands and deployment prerequisites. Applications
+and usernames never grant privileges. The original grant/check/list/revoke commands
+below remain the authority for membership administration.
+
 ## Deploy the additive migration first
 
 Review and deploy `supabase/migrations/20261024213844_moderator_accounts_and_queue.sql` through the normal staging migration workflow before releasing this Flutter client or using the operator utility. Earlier migrations, including the Phase 2 school/district schema, must already be present. The migration does not grant or revoke any existing membership and does not rewrite reports, photos or school relationships. No historical migration is changed.

@@ -11,6 +11,7 @@ import '../services/supabase_hazard_repository.dart';
 import 'accessibility_settings_dialog.dart';
 import 'analytics_screen.dart';
 import 'auth_dialog.dart';
+import 'account_page.dart';
 import 'explore_screen.dart';
 import 'report_form_screen.dart';
 import 'reports_screen.dart';
@@ -57,6 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _visibilityVersion = 0;
   String? _loadedUserId;
   BuildContext? _reviewContext;
+  bool _accountRouteOpen = false;
+  bool _recoveryRouteOpen = false;
 
   bool get _live => widget.liveClient != null;
 
@@ -89,9 +92,24 @@ class _HomeScreenState extends State<HomeScreen> {
             )
             .subscribe();
       }
-      _authSubscription = client.auth.onAuthStateChange.listen((_) {
-        unawaited(_refreshReports());
-      });
+      _authSubscription = client.auth.onAuthStateChange.listen(
+        (event) {
+          unawaited(_refreshReports());
+          if (event.event == AuthChangeEvent.passwordRecovery) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) unawaited(_showAccount(passwordRecovery: true));
+            });
+          }
+        },
+        onError: (Object _) {
+          if (!mounted) return;
+          _clearModeratorAccess();
+          setState(() {
+            _loadError =
+                'Session could not be refreshed. Retry or sign in again.';
+          });
+        },
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_refreshReports());
       });
@@ -435,13 +453,28 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _showAccount() async {
+  Future<void> _showAccount({bool passwordRecovery = false}) async {
     final client = widget.liveClient;
-    if (client == null) return;
-    await showDialog<void>(
-      context: context,
-      builder: (_) => AuthDialog(client: client),
-    );
+    if (client == null ||
+        _accountRouteOpen && !passwordRecovery ||
+        _recoveryRouteOpen && passwordRecovery) {
+      return;
+    }
+    final previousRouteOpen = _accountRouteOpen;
+    _accountRouteOpen = true;
+    if (passwordRecovery) _recoveryRouteOpen = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => client.auth.currentUser == null
+              ? AuthenticationPage(client: client)
+              : AccountPage(client: client, passwordRecovery: passwordRecovery),
+        ),
+      );
+    } finally {
+      _accountRouteOpen = previousRouteOpen;
+      if (passwordRecovery) _recoveryRouteOpen = false;
+    }
     if (mounted) await _refreshReports();
   }
 
