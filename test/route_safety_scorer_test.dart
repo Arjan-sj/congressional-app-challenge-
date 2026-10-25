@@ -85,4 +85,28 @@ void main() {
     expect(result.score, 80);
     expect(result.infrastructureDataComplete, isFalse);
   });
+  test('route issue proximity includes active non-demo reports only', () {
+    const scorer = RouteSafetyScorer();
+    final demo = HazardReport(
+      id: 'demo', schoolId: 'x', type: HazardType.blockedPath,
+      severity: 2, description: 'Fictional', createdAt: DateTime(2026),
+      latitude: 42.005, longitude: -88, isDemo: true,
+    );
+    final resolved = HazardReport(
+      id: 'resolved', schoolId: 'x', type: HazardType.blockedPath,
+      severity: 2, description: 'Resolved', createdAt: DateTime(2026),
+      latitude: 42.005, longitude: -88, status: ReportStatus.resolved,
+    );
+    final far = HazardReport(
+      id: 'far', schoolId: 'x', type: HazardType.blockedPath,
+      severity: 2, description: 'Far away', createdAt: DateTime(2026),
+      latitude: 42.3, longitude: -88,
+    );
+    final result = scorer.reportsNearRoute(route.points, [
+      verifiedHazard, unverifiedHazard, demo, resolved, far,
+    ]);
+    expect(result.map((e) => e.id), containsAll(['verified', 'pending']));
+    expect(result.length, 2);
+  });
+
 }
