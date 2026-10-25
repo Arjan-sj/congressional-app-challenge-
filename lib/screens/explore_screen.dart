@@ -935,11 +935,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
           height: 34,
           child: Tooltip(
             message:
-                'Crossing • ${visibleCrossings[index].tags['crossing:signals'] == 'yes' || visibleCrossings[index].tags['crossing'] == 'traffic_signals'
-                    ? 'Signalized'
-                    : visibleCrossings[index].tags['crossing:markings'] != null || visibleCrossings[index].tags['crossing'] == 'marked'
-                    ? 'Marked'
-                    : 'Type unknown'} • OpenStreetMap',
+                visibleCrossings[index].tags['crossing:signals'] == 'yes' ||
+                    visibleCrossings[index].tags['crossing'] == 'traffic_signals'
+                ? 'Crossing • Signalized • OpenStreetMap'
+                : visibleCrossings[index].tags['crossing:markings'] != null ||
+                    visibleCrossings[index].tags['crossing'] == 'marked'
+                ? 'Crossing • Marked • OpenStreetMap'
+                : 'Crossing • OpenStreetMap',
             child: DecoratedBox(
               key: ValueKey(visibleCrossings[index].id),
               decoration: BoxDecoration(
