@@ -190,7 +190,6 @@ class RoutePlannerPanel extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − reviewed unresolved concerns (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
-              'Routes account for verified nearby reports and available mapped infrastructure. Missing map data is not treated as unsafe.',
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
