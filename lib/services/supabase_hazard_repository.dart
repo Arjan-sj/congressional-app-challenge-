@@ -2,7 +2,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
-import '../models/report_moderation.dart';
+
+import 'dart:convert';
+
+import 'community_repository.dart';
 import '../models/nearby_school.dart';
 import 'hazard_codec.dart';
 
@@ -36,7 +39,7 @@ class SupabaseHazardRepository {
     String? schoolId,
     String? reportId,
   }) async {
-    // RLS returns reviewed/own reports, or the full queue for moderators.
+    // RLS includes public community reports and protects historical private data.
     final rows = <Map<String, dynamic>>[];
     final schoolIds = <String>[?schoolId];
     if (schoolId != null) {
@@ -118,196 +121,16 @@ class SupabaseHazardRepository {
     HazardPhotoDraft? photo,
     void Function(double progress)? onProgress,
   }) async {
-    final user = client.auth.currentUser;
-    if (user == null) {
-      throw StateError('Sign in using the account icon before saving.');
-    }
-    final row = await client
-        .from('hazard_reports')
-        .insert(HazardCodec.insertPayload(report, reporterId: user.id))
-        .select(fields)
-        .single();
-    final saved = HazardCodec.fromRow(row);
-    if (photo == null) return saved;
-
     onProgress?.call(.1);
-    final path =
-        '${saved.id}/${DateTime.now().microsecondsSinceEpoch}.${photo.extension}';
-    var uploadStarted = false;
-    try {
-      await client.from('hazard_report_photos').insert({
-        'report_id': saved.id,
-        'owner_id': user.id,
-        'storage_path': path,
-      });
-      onProgress?.call(.2);
-      uploadStarted = true;
-      onProgress?.call(.25);
-      await client.storage
-          .from('hazard-photos')
-          .uploadBinary(
-            path,
-            photo.bytes,
-            fileOptions: FileOptions(
-              contentType: photo.mimeType,
-              cacheControl: '3600',
-              upsert: false,
-            ),
-          );
-      onProgress?.call(.95);
-      String? signedUrl;
-      try {
-        signedUrl = await client.storage
-            .from('hazard-photos')
-            .createSignedUrl(path, 600);
-      } on StorageException {
-        // The upload is complete. A later refresh can request a fresh URL.
-      }
-      onProgress?.call(1);
-      return saved.withPhoto(path: path, signedUrl: signedUrl);
-    } catch (error) {
-      var objectRemoved = !uploadStarted;
-      if (uploadStarted) {
-        try {
-          await client.storage.from('hazard-photos').remove([path]);
-          objectRemoved = true;
-        } catch (_) {
-          objectRemoved = false;
-        }
-      }
-      if (objectRemoved) {
-        try {
-          await client.from('hazard_reports').delete().eq('id', saved.id);
-        } catch (_) {
-          // The report remains visible to its owner and can be deleted later.
-        }
-      }
-      throw StateError(_photoUploadMessage(error, objectRemoved));
-    }
-  }
-
-  Future<void> deleteHazard(HazardReport report) async {
-    final user = client.auth.currentUser;
-    if (user == null) throw StateError('Sign in before deleting a report.');
-    if (report.photoPath case final path?) {
-      try {
-        await client.storage.from('hazard-photos').remove([path]);
-      } on StorageException catch (error) {
-        throw StateError(
-          'The report was not deleted because its photo could not be removed: ${error.message}',
-        );
-      }
-    }
-    await client.from('hazard_reports').delete().eq('id', report.id);
-  }
-
-  String _photoUploadMessage(Object error, bool cleanedUp) {
-    final detail = switch (error) {
-      StorageException(statusCode: '413') => 'The photo exceeds 5 MB.',
-      StorageException(statusCode: '400', :final message) => message,
-      StorageException(statusCode: '401' || '403') =>
-        'Your account is not allowed to upload this photo.',
-      StorageException(:final message) => message,
-      PostgrestException(:final message) => message,
-      _ => 'Check your connection and try again.',
-    };
-    return cleanedUp
-        ? 'Photo upload failed. $detail No incomplete upload was kept.'
-        : 'Photo upload failed. $detail The report was retained so its photo can be cleaned up safely.';
-  }
-
-  Future<bool> canModerate() async {
-    if (client.auth.currentUser == null) return false;
-    return await client.rpc('is_report_moderator') as bool;
-  }
-
-  Future<List<ReportFlag>> fetchFlags([String? schoolId]) async {
-    return _fetchFlags(schoolId: schoolId);
-  }
-
-  Future<List<ReportFlag>> fetchFlagsForReport(String reportId) =>
-      _fetchFlags(reportId: reportId);
-  Future<List<ReportFlag>> _fetchFlags({
-    String? schoolId,
-    String? reportId,
-  }) async {
-    if (client.auth.currentUser == null) return [];
-    final rows = <Map<String, dynamic>>[];
-    String? after;
-    while (true) {
-      var query = client
-          .from('report_flags')
-          .select(
-            'id,report_id,user_id,reason,created_at,reviewed_at,hazard_reports!inner(school_id)',
-          );
-      if (schoolId != null) {
-        query = query.eq('hazard_reports.school_id', schoolId);
-      }
-      if (reportId != null) query = query.eq('report_id', reportId);
-      if (after != null) query = query.gt('id', after);
-      final page = await query.order('id').limit(500);
-      rows.addAll(page);
-      if (page.length < 500) break;
-      after = page.last['id'] as String;
-    }
-    return rows.map(ReportFlag.fromRow).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  Future<List<ModerationEvent>> fetchHistory(String reportId) async {
-    if (client.auth.currentUser == null) return [];
-    final rows = <Map<String, dynamic>>[];
-    String? after;
-    while (true) {
-      var query = client
-          .from('report_moderation_history')
-          .select(
-            'id,report_id,actor_id,previous_status,status,reason,created_at',
-          )
-          .eq('report_id', reportId);
-      if (after != null) query = query.gt('id', after);
-      final page = await query.order('id').limit(500);
-      rows.addAll(page);
-      if (page.length < 500) break;
-      after = page.last['id'] as String;
-    }
-    return rows.map(ModerationEvent.fromRow).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  Future<void> flagReport(HazardReport report, String reason) async {
-    final user = client.auth.currentUser;
-    if (user == null) throw StateError('Sign in before flagging a report.');
-    await client.from('report_flags').insert({
-      'report_id': report.id,
-      'user_id': user.id,
-      'reason': reason.trim(),
-    });
-  }
-
-  Future<HazardReport> moderateReport(
-    HazardReport report,
-    ReportStatus status,
-    String reason,
-  ) async {
-    final row = await client
-        .rpc(
-          'moderate_hazard_report',
-          params: {
-            'p_report_id': report.id,
-            'p_status': status.name,
-            'p_reason': reason.trim(),
-            'p_expected_status': report.status.name,
-          },
-        )
-        .single();
-    final saved = HazardCodec.fromRow({
-      ...row,
-      'school': {'name': report.schoolName},
-    });
-    return saved.withPhoto(
-      path: report.photoPath,
-      signedUrl: report.photoSignedUrl,
-    );
+    final result = await CommunityRepository(client).action('submit', {
+      'id': report.id,
+      'type': HazardCodec.types[report.type],
+      'severity': report.severity,
+      'description': report.description.trim(),
+      'latitude': report.latitude,
+      'longitude': report.longitude,
+    }, photo: photo == null ? null : {'base64': base64Encode(photo.bytes)});
+    onProgress?.call(1);
+    return CommunityReview(result).report;
   }
 }

@@ -2,7 +2,7 @@
 
 A Flutter application for documenting school walking and biking concerns. Built for the Congressional App Challenge.
 
-The Flutter app includes imported nationwide NCES schools and cached OpenStreetMap infrastructure, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
+The Flutter app includes imported nationwide NCES schools and cached OpenStreetMap infrastructure, walking/cycling route comparison through OpenRouteService, anonymous Supabase-backed reports and community review, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
 
 The separate Analytics workspace adds RLS-aware overview metrics, trends,
 interactive hazard heatmaps, school/category comparisons, Realtime refresh,
@@ -31,8 +31,9 @@ and reproducible synthetic fixtures. Production resets are blocked.
 For verified NCES public-school district relationships, see the
 [Phase 2 district schema, preview and reviewed backfill workflow](docs/SCHOOL_DISTRICTS.md).
 
-For trusted moderator provisioning/revocation, paginated nationwide review queues
-and permission-refresh behavior, see the [Phase 4 moderation workflow](docs/MODERATION.md).
+Anyone can report a concern, vote or flag through the Community tab. Three agreeing
+reviews from independent connections change a report's status. See
+[anonymous reporting, consensus, privacy and deployment](docs/COMMUNITY_REVIEW.md).
 
 ## Run locally (macOS or Linux)
 
@@ -92,8 +93,8 @@ flutter test
 
 ## Safety and privacy
 
-- **An unverified report is not a verified hazard.** The map always shows each report's review status.
-- Walking and cycling requests avoid 100 m buffers around active visible reports as a precaution; only verified reports affect the numeric safety score.
+- **Community agreement is not professional verification.** The map always shows each report's review status.
+- Walking and cycling requests avoid 100 m buffers around active visible reports as a precaution; only reviewed reports affect the numeric safety score.
 - Missing OpenStreetMap infrastructure is unknown; it must never be described as unsafe.
 - Do not store student names, home addresses, school commute routines, or photos of identifiable children.
 - Never put Supabase `service_role` / secret keys into client code or GitHub.
@@ -105,9 +106,8 @@ See [Setup instructions](docs/SETUP.md), [data contract](docs/INTEGRATION_CONTRA
 ## Optional Supabase test integration
 See [Flutter connection guide](docs/CONNECT_FLUTTER.md).
 
-## Moderation
+## Community review
 
-Review submitted reports, verify/reject/resolve them with a reason, flag
-inaccurate reports, and inspect decision history. Live moderation requires the
-new database migration and a provisioned moderator account. See
-[Moderation setup and verification](docs/MODERATION.md).
+New reports and photos are public. Share an observation, review concerns or flag
+inaccuracies. Review counts and consensus refresh the existing report, map and
+Analytics; no special role is needed. See [Community review](docs/COMMUNITY_REVIEW.md).

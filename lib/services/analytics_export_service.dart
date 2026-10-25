@@ -84,7 +84,7 @@ class AnalyticsExportService {
         ['Metric', 'Current', 'Previous'],
         ['Unique hazards', data.summary.total, data.previousSummary.total],
         ['Pending', data.summary.pending, data.previousSummary.pending],
-        ['Verified', data.summary.verified, data.previousSummary.verified],
+        ['Reviewed', data.summary.verified, data.previousSummary.verified],
         ['Resolved', data.summary.resolved, data.previousSummary.resolved],
         [
           'High priority',
@@ -115,7 +115,7 @@ class AnalyticsExportService {
     }
     if (datasets.contains(AnalyticsDataset.trends)) {
       section('Trends', [
-        ['Period', 'Total', 'Pending', 'Verified', 'Resolved'],
+        ['Period', 'Total', 'Pending', 'Reviewed', 'Resolved'],
         for (final point in data.trend)
           [
             point.period.toIso8601String(),
@@ -140,7 +140,7 @@ class AnalyticsExportService {
           'District',
           'Total',
           'Pending',
-          'Verified',
+          'Reviewed',
           'Resolved',
           'High priority',
           'Average severity',
@@ -216,7 +216,7 @@ class AnalyticsExportService {
         ['Metric', 'Current', 'Previous'],
         ['Unique hazards', data.summary.total, data.previousSummary.total],
         ['Pending', data.summary.pending, data.previousSummary.pending],
-        ['Verified', data.summary.verified, data.previousSummary.verified],
+        ['Reviewed', data.summary.verified, data.previousSummary.verified],
         ['Resolved', data.summary.resolved, data.previousSummary.resolved],
         [
           'High priority',
@@ -242,7 +242,7 @@ class AnalyticsExportService {
     }
     if (datasets.contains(AnalyticsDataset.trends)) {
       addSheet('Trends', [
-        ['Period', 'Total', 'Pending', 'Verified', 'Resolved'],
+        ['Period', 'Total', 'Pending', 'Reviewed', 'Resolved'],
         for (final point in data.trend)
           [
             point.period.toIso8601String(),
@@ -267,7 +267,7 @@ class AnalyticsExportService {
           'District',
           'Total',
           'Pending',
-          'Verified',
+          'Reviewed',
           'Resolved',
           'High priority',
           'Average severity',
@@ -405,7 +405,7 @@ class AnalyticsExportService {
               children: [
                 _pdfMetric('Unique hazards', '${data.summary.total}'),
                 _pdfMetric('Pending', '${data.summary.pending}'),
-                _pdfMetric('Verified', '${data.summary.verified}'),
+                _pdfMetric('Reviewed', '${data.summary.verified}'),
                 _pdfMetric('Resolved', '${data.summary.resolved}'),
                 _pdfMetric('High priority', '${data.summary.highPriority}'),
                 _pdfMetric(
@@ -457,7 +457,7 @@ class AnalyticsExportService {
                 'School',
                 'Total',
                 'Pending',
-                'Verified',
+                'Reviewed',
                 'Resolved',
                 'Rate',
               ],
