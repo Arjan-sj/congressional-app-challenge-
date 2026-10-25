@@ -4,3 +4,7 @@ verify_jwt = false
 [functions.route-directions]
 # The handler validates the project key and any signed-in user itself.
 verify_jwt = false
+
+[functions.address-search]
+# Validate project key and optional session inside the handler, like route-directions.
+verify_jwt = false

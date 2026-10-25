@@ -1,3 +1,4 @@
+import '../services/address_search_service.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -100,6 +101,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final FocusNode _mapFocusNode = FocusNode(debugLabel: 'Community map');
   LatLng? _selectedPoint;
   LatLng? _userLocation;
+  final Map<bool, int> _typedEndpointVersion = {};
+  AddressSearchService? _addressSearch;
   LatLng? _routeOrigin;
   LatLng? _routeDestination;
   HazardType? _filter;
@@ -128,6 +131,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.liveClient != null) {
+      _addressSearch = AddressSearchService.supabase(widget.liveClient!);
+    }
     _routeService = widget.liveClient == null
         ? OpenRouteService()
         : OpenRouteService.supabase(widget.liveClient!);
@@ -535,12 +541,29 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  void _addressEdited({required bool origin}) {
+    _typedEndpointVersion[origin] = (_typedEndpointVersion[origin] ?? 0) + 1;
+    if (origin ? _routeOrigin == null : _routeDestination == null) return;
+    setState(() {
+      if (origin) { _routeOrigin = null; } else { _routeDestination = null; }
+      _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _routeReports = [];
+      _selectedRouteId = null;
+      _loadingRoutes = false;
+      _routeRequestVersion++;
+      _routeError = null;
+    });
+  }
+
   Future<String?> _setTypedRoutePoint(String input, {required bool origin}) async {
+    final version = (_typedEndpointVersion[origin] ?? 0) + 1;
+    _typedEndpointVersion[origin] = version;
     final value = input.trim();
     if (value.isEmpty) return 'Enter a school name or coordinates.';
     final parts = value.split(',');
     LatLng? location;
-    if (parts.length == 2) {
+    if (parts.length == 2 && parts.every((part) => double.tryParse(part.trim()) != null)) {
       final lat = double.tryParse(parts[0].trim());
       final lon = double.tryParse(parts[1].trim());
       if (lat == null || lon == null || !lat.isFinite || !lon.isFinite ||
@@ -553,7 +576,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         final matches = await _mapData?.search(value, null);
         if (!mounted) return 'Map closed before search finished.';
         if (matches == null || matches.isEmpty) {
-          return 'School not found. Try the full name or select a map point.';
+          return 'No matching school. For an address, choose a suggestion or select a map point.';
         }
         final match = RouteSchoolMatch.uniqueBestMatch(value, matches);
         if (match == null) {
@@ -565,6 +588,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
     }
     if (!mounted) return 'Map closed before location was selected.';
+    if (_typedEndpointVersion[origin] != version) return 'Location search changed. Select a location again.';
     setState(() {
       if (origin) {
         _routeOrigin = location;
@@ -594,6 +618,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _useCurrentAsRouteOrigin() async {
+    _typedEndpointVersion[true] = (_typedEndpointVersion[true] ?? 0) + 1;
     try {
       final location = await _locationService.currentLocation();
       if (!mounted) return;
@@ -617,6 +642,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _useSelectedAsRouteOrigin() {
+    _typedEndpointVersion[true] = (_typedEndpointVersion[true] ?? 0) + 1;
     if (_selectedPoint == null) return;
     setState(() {
       _routeOrigin = _selectedPoint;
@@ -630,6 +656,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _useSelectedAsRouteDestination() {
+    _typedEndpointVersion[false] = (_typedEndpointVersion[false] ?? 0) + 1;
     if (_selectedPoint == null) return;
     setState(() {
       _routeDestination = _selectedPoint;
@@ -643,6 +670,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _clearRoute() {
+    for (final origin in [true, false]) {
+      _typedEndpointVersion[origin] = (_typedEndpointVersion[origin] ?? 0) + 1;
+    }
     setState(() {
       _routeOrigin = null;
       _routeDestination = null;
@@ -1854,6 +1884,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   const SizedBox(height: 18),
                 ],
                 RoutePlannerPanel(
+                  addressSearch: _addressSearch?.search,
+                  onStartEdited: () => _addressEdited(origin: true),
+                  onEndEdited: () => _addressEdited(origin: false),
                   selectedPoint: _selectedPoint,
                   origin: _routeOrigin,
                   destination: _routeDestination,

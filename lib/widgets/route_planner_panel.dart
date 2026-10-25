@@ -4,6 +4,8 @@ import 'package:latlong2/latlong.dart';
 import '../models/safety_route.dart';
 import '../models/hazard_report.dart';
 import 'app_ui.dart';
+import 'address_route_entry.dart';
+import '../services/address_search_service.dart';
 
 class RoutePlannerPanel extends StatelessWidget {
   const RoutePlannerPanel({
@@ -25,8 +27,14 @@ class RoutePlannerPanel extends StatelessWidget {
     required this.nearbyReports,
     this.selectedRouteId,
     this.error,
+    this.addressSearch,
+    this.onStartEdited,
+    this.onEndEdited,
   });
 
+  final Future<List<AddressSuggestion>> Function(String)? addressSearch;
+  final VoidCallback? onStartEdited;
+  final VoidCallback? onEndEdited;
   final LatLng? selectedPoint;
   final LatLng? origin;
   final LatLng? destination;
@@ -102,9 +110,9 @@ class RoutePlannerPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          _LocationEntry(label: 'Start location', onSet: onSetStart),
+          AddressRouteEntry(label: 'Start location', onSet: onSetStart, search: addressSearch, point: origin, onEdited: onStartEdited),
           const SizedBox(height: 10),
-          _LocationEntry(label: 'End location', onSet: onSetEnd),
+          AddressRouteEntry(label: 'End location', onSet: onSetEnd, search: addressSearch, point: destination, onEdited: onEndEdited),
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
@@ -114,7 +122,7 @@ class RoutePlannerPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text('Search school names in any capitalization, or enter coordinates. For street addresses, select a map point.'),
+          const Text('Choose an address suggestion to set a location anywhere in the US. School names, coordinates and map selection still work.'),
           const SizedBox(height: 14),
           Wrap(
             spacing: 10,
@@ -343,55 +351,4 @@ class _RouteResultCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LocationEntry extends StatefulWidget {
-  const _LocationEntry({required this.label, required this.onSet});
-  final String label;
-  final Future<String?> Function(String) onSet;
-  @override
-  State<_LocationEntry> createState() => _LocationEntryState();
-}
-
-class _LocationEntryState extends State<_LocationEntry> {
-  final controller = TextEditingController();
-  String? message;
-  bool busy = false;
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-  Future<void> submit() async {
-    if (busy) return;
-    setState(() { busy = true; message = null; });
-    try {
-      final result = await widget.onSet(controller.text.trim());
-      if (mounted) setState(() => message = result ?? 'Location selected.');
-    } catch (_) {
-      if (mounted) setState(() => message = 'Location lookup unavailable.');
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(widget.label, style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 6),
-      Row(children: [
-        Expanded(child: TextField(
-          key: ValueKey(widget.label == 'Start location' ? 'route-start-entry' : 'route-end-entry'),
-          controller: controller,
-          textInputAction: TextInputAction.search,
-          onSubmitted: (_) => submit(),
-          decoration: const InputDecoration(hintText: 'School name or 42.0274, -88.1066'),
-        )),
-        const SizedBox(width: 8),
-        FilledButton.tonal(onPressed: busy ? null : submit, child: Text(busy ? 'Searching…' : 'Set')),
-      ]),
-      if (message != null) Text(message!, style: Theme.of(context).textTheme.bodySmall),
-    ],
-  );
 }
