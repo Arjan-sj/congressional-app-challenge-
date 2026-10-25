@@ -16,7 +16,7 @@ async function digest(value: string) {
 }
 
 export function createAddressHandler(settings: Settings, transport: typeof fetch = fetch) {
-  const reply = (status: number, message: string, retry = 60) => new Response(JSON.stringify({error: message}), {
+  const reply = (status: number, message: string, retry = 60) => new Response(JSON.stringify({error: message, ...(status === 429 ? {retry_after: retry} : {})}), {
     status, headers: {...cors, ...(status === 429 ? {"Retry-After": String(retry)} : {})},
   });
   return async (request: Request): Promise<Response> => {
@@ -71,13 +71,6 @@ export function createAddressHandler(settings: Settings, transport: typeof fetch
       }
       const actorHash = await digest(actor);
 
-      const claim = await transport(`${settings.supabaseUrl}/rest/v1/rpc/claim_address_request`, {
-        method: "POST", headers: {apikey: settings.serviceKey, Authorization: `Bearer ${settings.serviceKey}`, "Content-Type": "application/json"},
-        body: JSON.stringify({p_actor_hash: actorHash}), signal: AbortSignal.timeout(3000),
-      });
-      if (!claim.ok) return reply(503, "Address search unavailable");
-      const quota = await claim.json();
-      if (quota.granted !== true) return reply(429, "Address search limit reached. Try later or select a map point.", Math.max(1, Math.min(86400, Number(quota.retry_after) || 60)));
       // Reuse the nationwide NCES directory for named schools. Its official
       // address avoids locality aliases and missing venues in the geocoder.
       query = query.replace(/\b(high|middle|elementary)school\b/gi, "$1 school");
@@ -105,10 +98,17 @@ export function createAddressHandler(settings: Settings, transport: typeof fetch
           }
         } catch { /* Directory outages fall back to the address provider. */ }
       }
+      const claim = await transport(`${settings.supabaseUrl}/rest/v1/rpc/claim_address_request`, {
+        method: "POST", headers: {apikey: settings.serviceKey, Authorization: `Bearer ${settings.serviceKey}`, "Content-Type": "application/json"},
+        body: JSON.stringify({p_actor_hash: actorHash}), signal: AbortSignal.timeout(3000),
+      });
+      if (!claim.ok) return reply(503, "Address search unavailable");
+      const quota = await claim.json();
+      if (quota.granted !== true) return reply(429, "Address search limit reached. Try later or select a map point.", Math.max(1, Math.min(86400, Number(quota.retry_after) || 60)));
       const url = new URL("https://api.openrouteservice.org/geocode/autocomplete");
       url.search = new URLSearchParams({api_key: settings.orsKey, text: query, "boundary.country": "USA", size: "5"}).toString();
       const upstream = await transport(url, {signal: AbortSignal.timeout(8000)});
-      if (!upstream.ok) return reply(upstream.status === 429 ? 429 : 503, "Address search unavailable");
+      if (!upstream.ok) return reply(upstream.status === 429 ? 429 : 503, "Address search unavailable", Math.max(1, Math.min(86400, Number(upstream.headers.get("Retry-After")) || 60)));
       const rawResponse = await upstream.text();
       if (rawResponse.length > 100000) return reply(502, "Invalid address response");
       const data = JSON.parse(rawResponse);

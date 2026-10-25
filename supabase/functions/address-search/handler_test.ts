@@ -37,6 +37,7 @@ test('missing and invalid project keys cannot consume quota',async()=>{
 test('quota denial prevents upstream requests',async()=>{
  const {fetcher,calls}=transport({quota:false});const response=await createAddressHandler(settings,fetcher)(request());
  assert.equal(response.status,429);assert(response.headers.has('retry-after'));assert(!calls.some(c=>c.includes('openrouteservice')));
+ assert.equal((await response.json()).retry_after,60);
 });
 test('provider quota and failures are sanitized',async()=>{
  for(const status of [429,403,500]) {
@@ -65,10 +66,11 @@ test('CORS preflight succeeds without credentials, GET is rejected',async()=>{
 });
 test('Highschool uses the existing school directory and returns its official street address',async()=>{
  let providerCalls=0;
+ let quotaCalls=0;
  const fetcher:typeof fetch=async(input,init)=>{
   const url=String(input);
   if(url.endsWith('/settings'))return Response.json({});
-  if(url.includes('claim_address_request'))return Response.json({granted:true});
+  if(url.includes('claim_address_request')){quotaCalls++;return Response.json({granted:true});}
   if(url.endsWith('/search_schools')){
    assert.deepEqual(JSON.parse(String(init?.body)),{search_text:'Schaumburg High school',state_code:null});
    return Response.json([{name:'Schaumburg High School',address:'1100 W Schaumburg Rd',city:'Schaumburg',state:'IL',zip_code:'60194',latitude:42.027416,longitude:-88.106632}]);
@@ -78,7 +80,7 @@ test('Highschool uses the existing school directory and returns its official str
  const response=await createAddressHandler(settings,fetcher)(request('Schaumburg Highschool'));
  assert.equal(response.status,200);
  assert.deepEqual(await response.json(),{suggestions:[{label:'Schaumburg High School, 1100 W Schaumburg Rd, Schaumburg, IL, 60194',latitude:42.027416,longitude:-88.106632}]});
- assert.equal(providerCalls,0);
+ assert.equal(providerCalls,0);assert.equal(quotaCalls,0);
 });
 test('unavailable school directory falls back to geocoding with normalized words',async()=>{
  const fetcher:typeof fetch=async(input)=>{

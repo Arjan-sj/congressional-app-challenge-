@@ -1,6 +1,6 @@
 # Street-address search
 
-Start and End accept US street addresses with a city/state or ZIP. After 450 ms
+Start and End accept US street addresses with a city/state or ZIP. After 700 ms
 without typing, up to five OpenRouteService/Pelias suggestions appear. Select a
 suggestion to geocode that endpoint, then use the existing Compare routes action.
 Coordinates, school-name lookup, map clicks and device location still work. Editing
@@ -16,7 +16,8 @@ remain visible for selection. A previously selected result retains its coordinat
 
 ## Deployment
 
-1. Apply `20261025223000_address_search_limits.sql` through the normal migration
+1. Apply `20261025223000_address_search_limits.sql` and
+   `20261026001500_address_autocomplete_budget.sql` through the normal migration
    workflow (`supabase db push` against the intended project).
 2. Enable geocoding/autocomplete on the existing OpenRouteService account. Check
    its current plan at https://openrouteservice.org/plans/ and API documentation
@@ -38,7 +39,7 @@ API, not public Nominatim.
 ## Budgets and privacy
 
 Atomic shared budgets limit provider calls across Edge isolates: two per second,
-20 per rolling minute and 400 per rolling day globally; 10/minute and 100/day per
+20 per rolling minute and 400 per rolling day globally; 20/minute and 100/day per
 hashed actor. Confirm these are below the deployed provider plan's current limits
 and lower them if necessary. These are application caps, not provider guarantees.
 Provider 429s and timeouts produce recoverable errors; quota-database failures
@@ -47,6 +48,13 @@ Responses are `no-store`. No queries or coordinates are cached or stored by the
 proxy; quota storage contains only actor hashes and timestamps. The geocoding
 provider necessarily receives typed queries (minimum three characters). Do not
 add address/request-body logging to analytics or Edge diagnostics.
+
+Successful school-directory results do not consume the external geocoding budget.
+The browser coalesces identical in-flight queries and reuses up to 24 validated
+results in memory for one minute; nothing is written to disk. A temporary limit
+returns `retry_after` in the JSON response. The client pauses network requests
+until that deadline and retries the current text, cancelling stale retry timers
+when the user changes or selects a location.
 
 Attribution: OpenRouteService/Pelias, OpenStreetMap contributors, OpenAddresses,
 GeoNames and Who's On First. Confirm current provider attribution requirements.

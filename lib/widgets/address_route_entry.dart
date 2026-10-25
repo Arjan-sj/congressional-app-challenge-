@@ -63,7 +63,7 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
     widget.onEdited?.call();
     setState(() { suggestions = []; message = null; busy = false; });
     if (text.trim().length < 3 || widget.search == null) return;
-    debounce = Timer(const Duration(milliseconds: 450), () async {
+    debounce = Timer(const Duration(milliseconds: 700), () async {
       if (!mounted || current != version) return;
       setState(() => busy = true);
       try {
@@ -74,14 +74,28 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
           message = results.isEmpty ? 'No addresses found. Include city, state or ZIP, or use the map.' : null;
         });
       } catch (error) {
-        if (mounted && current == version) {
-          setState(() => message = error is AddressSearchException
-              ? error.message : 'Address search unavailable. Retry or use the map.');
-        }
+        searchError(error, current);
       } finally {
         if (mounted && current == version) setState(() => busy = false);
       }
     });
+  }
+
+  void searchError(Object error, int current) {
+    if (!mounted || current != version) return;
+    final retry = error is AddressSearchException ? error.retryAfter : null;
+    setState(() {
+      busy = false;
+      message = retry == null
+          ? (error is AddressSearchException ? error.message : 'Address search unavailable. Retry or use the map.')
+          : 'Search paused. Retrying automatically in about ${(retry.inMilliseconds / 1000).ceil().clamp(1, 86400)} seconds.';
+    });
+    if (retry != null) {
+      debounce?.cancel();
+      debounce = Timer(Duration(milliseconds: retry.inMilliseconds.clamp(1000, 86400000)), () {
+        if (mounted && current == version) changed(controller.text);
+      });
+    }
   }
 
   Future<void> submit([AddressSuggestion? suggestion]) async {
@@ -112,13 +126,7 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
         }
         suggestion = results.single;
       } catch (error) {
-        if (mounted && current == version) {
-          setState(() {
-            busy = false;
-            message = error is AddressSearchException
-                ? error.message : 'Address search unavailable. Retry or use the map.';
-          });
-        }
+        searchError(error, current);
         return;
       }
     }

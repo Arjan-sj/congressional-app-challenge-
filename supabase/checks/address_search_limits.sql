@@ -29,11 +29,20 @@ insert into public.address_proxy_requests(actor_hash,created_at)
 select repeat('a',64),clock_timestamp()-interval '2 seconds' from generate_series(1,10);
 set local role service_role;
 do $$ declare r jsonb; begin
+  r:=public.claim_address_request(repeat('a',64));
+  assert (r->>'granted')::boolean,'Autocomplete can continue after ten requests within the unchanged global cap';
+end $$;
+reset role;
+delete from public.address_proxy_requests;
+insert into public.address_proxy_requests(actor_hash,created_at)
+select repeat('a',64),clock_timestamp()-interval '2 seconds' from generate_series(1,20);
+set local role service_role;
+do $$ declare r jsonb; begin
   r:=public.claim_address_request(repeat('a',64)); assert not (r->>'granted')::boolean,'Actor minute cap';
 end $$;
 reset role;
 insert into public.address_proxy_requests(actor_hash,created_at)
-select repeat('b',64),clock_timestamp()-interval '2 seconds' from generate_series(1,10);
+select repeat('b',64),clock_timestamp()-interval '2 seconds' from generate_series(1,20);
 set local role service_role;
 do $$ declare r jsonb; begin
   r:=public.claim_address_request(repeat('c',64)); assert not (r->>'granted')::boolean,'Global minute cap';

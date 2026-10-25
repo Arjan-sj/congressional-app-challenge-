@@ -1,7 +1,37 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/services/address_search_service.dart';
 
 void main() {
+  test('duplicate in-flight and recent searches share one request', () async {
+    final response = Completer<dynamic>();
+    var calls = 0;
+    final service = AddressSearchService((_) { calls++; return response.future; });
+    final first = service.search('123 Main St');
+    final second = service.search('123 main st');
+    response.complete({'suggestions': []});
+    expect(await first, isEmpty);
+    expect(await second, isEmpty);
+    expect(await service.search('123 Main St'), isEmpty);
+    expect(calls, 1);
+  });
+
+  test('cooldown prevents requests until its deadline and then recovers', () async {
+    var now = DateTime(2026);
+    var calls = 0;
+    final service = AddressSearchService((_) async {
+      calls++;
+      if (calls == 1) throw const AddressSearchException('Cooling down', retryAfter: Duration(seconds: 2));
+      return {'suggestions': []};
+    }, now: () => now);
+    await expectLater(service.search('123 Main'), throwsA(isA<AddressSearchException>()));
+    await expectLater(service.search('456 Main'), throwsA(isA<AddressSearchException>()));
+    expect(calls, 1);
+    now = now.add(const Duration(seconds: 3));
+    expect(await service.search('456 Main'), isEmpty);
+    expect(calls, 2);
+  });
+
   test('short inputs do not call the server', () async {
     var calls = 0;
     final service = AddressSearchService((_) async { calls++; return {}; });
