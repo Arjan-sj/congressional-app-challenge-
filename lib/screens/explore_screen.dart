@@ -24,6 +24,7 @@ import '../services/open_route_service.dart';
 import '../services/map_data_service.dart';
 import '../services/map_marker_index.dart';
 import '../services/route_safety_scorer.dart';
+import '../services/route_school_match.dart';
 import '../services/urban_schools_repository.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/hazard_photo_view.dart';
@@ -529,6 +530,87 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  Future<String?> _setTypedRoutePoint(String input, {required bool origin}) async {
+    final value = input.trim();
+    if (value.isEmpty) return 'Enter a school name or coordinates.';
+    final parts = value.split(',');
+    LatLng? location;
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0].trim());
+      final lon = double.tryParse(parts[1].trim());
+      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite ||
+          lat.abs() > 90 || lon.abs() > 180) {
+        return 'Use valid latitude, longitude coordinates.';
+      }
+      location = LatLng(lat, lon);
+    } else {
+      try {
+        final matches = await _mapData?.search(value, null);
+        if (!mounted) return 'Map closed before search finished.';
+        if (matches == null || matches.isEmpty) {
+          return 'School not found. Try the full name or select a map point.';
+        }
+        final match = RouteSchoolMatch.uniqueBestMatch(value, matches);
+        if (match == null) {
+          return RouteSchoolMatch.ambiguousMessage(matches);
+        }
+        location = match.location;
+      } catch (_) {
+        return 'School lookup failed. Choose a map point.';
+      }
+    }
+    if (!mounted) return 'Map closed before location was selected.';
+    setState(() {
+      if (origin) {
+        _routeOrigin = location;
+      } else {
+        _routeDestination = location;
+      }
+      _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _routeReports = [];
+      _selectedRouteId = null;
+      _loadingRoutes = false;
+      _routeRequestVersion++;
+      _routeError = null;
+    });
+    return null;
+  }
+
+  List<HazardReport> get _selectedRouteIssues {
+    final selected = _routeAssessments
+        .where((assessment) => assessment.route.id == _selectedRouteId)
+        .firstOrNull;
+    if (selected == null) return const [];
+    return _routeScorer.reportsNearRoute(
+      selected.route.points,
+      _routeReports,
+    );
+  }
+
+  Future<void> _useCurrentAsRouteOrigin() async {
+    try {
+      final location = await _locationService.currentLocation();
+      if (!mounted) return;
+      setState(() {
+        _routeOrigin = location;
+        _routeAssessments = const [];
+        _routeAvoidLocations = const [];
+        _routeReports = [];
+        _selectedRouteId = null;
+        _loadingRoutes = false;
+        _routeRequestVersion++;
+        _routeError = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location unavailable. Check browser location permission or tap the map.')),
+        );
+      }
+    }
+  }
+
   void _useSelectedAsRouteOrigin() {
     if (_selectedPoint == null) return;
     setState(() {
@@ -929,11 +1011,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
           height: 34,
           child: Tooltip(
             message:
-                'Crossing • ${visibleCrossings[index].tags['crossing:signals'] == 'yes' || visibleCrossings[index].tags['crossing'] == 'traffic_signals'
-                    ? 'Signalized'
-                    : visibleCrossings[index].tags['crossing:markings'] != null || visibleCrossings[index].tags['crossing'] == 'marked'
-                    ? 'Marked'
-                    : 'Type unknown'} • OpenStreetMap',
+                visibleCrossings[index].tags['crossing:signals'] == 'yes' ||
+                    visibleCrossings[index].tags['crossing'] == 'traffic_signals'
+                ? 'Crossing • Signalized • OpenStreetMap'
+                : visibleCrossings[index].tags['crossing:markings'] != null ||
+                    visibleCrossings[index].tags['crossing'] == 'marked'
+                ? 'Crossing • Marked • OpenStreetMap'
+                : 'Crossing • OpenStreetMap',
             child: DecoratedBox(
               key: ValueKey(visibleCrossings[index].id),
               decoration: BoxDecoration(
@@ -1601,6 +1685,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                               ),
                                           ],
                                         ),
+                                      if (_selectedRouteIssues.isNotEmpty)
+                                        CircleLayer(
+                                          key: const ValueKey('near-route-issues-layer'),
+                                          circles: [
+                                            for (final report in _selectedRouteIssues)
+                                              CircleMarker(
+                                                point: LatLng(
+                                                  report.latitude!,
+                                                  report.longitude!,
+                                                ),
+                                                radius: 45,
+                                                useRadiusInMeter: true,
+                                                color: const Color(0x22EF6C32),
+                                                borderColor:
+                                                    report.status == ReportStatus.verified
+                                                    ? const Color(0xFFBD322A)
+                                                    : const Color(0xFFE38A25),
+                                                borderStrokeWidth: 3,
+                                              ),
+                                          ],
+                                        ),
                                       MarkerLayer(markers: markers),
                                     ],
                                   ),
@@ -1756,6 +1861,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onCompare: _compareRoutes,
                   onClear: _clearRoute,
                   onSelectRoute: _fitRoute,
+                  onSetStart: (input) => _setTypedRoutePoint(input, origin: true),
+                  onSetEnd: (input) => _setTypedRoutePoint(input, origin: false),
+                  onUseCurrentLocation: _useCurrentAsRouteOrigin,
+                  nearbyReports: _selectedRouteIssues,
                 ),
                 const SizedBox(height: 18),
                 SectionCard(
