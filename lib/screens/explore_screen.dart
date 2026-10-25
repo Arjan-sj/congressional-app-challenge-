@@ -591,6 +591,29 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  Future<void> _useCurrentAsRouteOrigin() async {
+    try {
+      final location = await _locationService.currentLocation();
+      if (!mounted) return;
+      setState(() {
+        _routeOrigin = location;
+        _routeAssessments = const [];
+        _routeAvoidLocations = const [];
+        _routeReports = [];
+        _selectedRouteId = null;
+        _loadingRoutes = false;
+        _routeRequestVersion++;
+        _routeError = null;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location unavailable. Check browser location permission or tap the map.')),
+        );
+      }
+    }
+  }
+
   void _useSelectedAsRouteOrigin() {
     if (_selectedPoint == null) return;
     setState(() {
@@ -1844,6 +1867,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onSelectRoute: _fitRoute,
                   onSetStart: (input) => _setTypedRoutePoint(input, origin: true),
                   onSetEnd: (input) => _setTypedRoutePoint(input, origin: false),
+                  onUseCurrentLocation: _useCurrentAsRouteOrigin,
                   nearbyReports: _selectedRouteIssues,
                 ),
                 const SizedBox(height: 18),
