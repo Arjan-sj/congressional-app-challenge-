@@ -534,6 +534,52 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  Future<String?> _setTypedRoutePoint(String input, {required bool origin}) async {
+    final value = input.trim();
+    if (value.isEmpty) return 'Enter a school name or coordinates.';
+    final parts = value.split(',');
+    LatLng? location;
+    if (parts.length == 2) {
+      final lat = double.tryParse(parts[0].trim());
+      final lon = double.tryParse(parts[1].trim());
+      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite ||
+          lat.abs() > 90 || lon.abs() > 180) {
+        return 'Use valid latitude, longitude coordinates.';
+      }
+      location = LatLng(lat, lon);
+    } else {
+      try {
+        final matches = await _mapData?.search(value, null);
+        if (!mounted) return 'Map closed before search finished.';
+        if (matches == null || matches.isEmpty) {
+          return 'School not found. Try the full name or select a map point.';
+        }
+        if (matches.length != 1) {
+          return 'Multiple schools found. Use full name or click the map.';
+        }
+        location = matches.single.location;
+      } catch (_) {
+        return 'School lookup failed. Choose a map point.';
+      }
+    }
+    if (!mounted) return 'Map closed before location was selected.';
+    setState(() {
+      if (origin) {
+        _routeOrigin = location;
+      } else {
+        _routeDestination = location;
+      }
+      _routeAssessments = const [];
+      _routeAvoidLocations = const [];
+      _routeReports = [];
+      _selectedRouteId = null;
+      _loadingRoutes = false;
+      _routeRequestVersion++;
+      _routeError = null;
+    });
+    return null;
+  }
+
   void _useSelectedAsRouteOrigin() {
     if (_selectedPoint == null) return;
     setState(() {
@@ -1764,6 +1810,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onCompare: _compareRoutes,
                   onClear: _clearRoute,
                   onSelectRoute: _fitRoute,
+                  onSetStart: (input) => _setTypedRoutePoint(input, origin: true),
+                  onSetEnd: (input) => _setTypedRoutePoint(input, origin: false),
                 ),
                 const SizedBox(height: 18),
                 SectionCard(
