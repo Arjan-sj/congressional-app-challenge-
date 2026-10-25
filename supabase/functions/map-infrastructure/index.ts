@@ -1,6 +1,6 @@
 import { normalize } from './osm_normalize.ts';
 import { overpassProvider, OVERPASS_USER_AGENT } from './overpass_provider.ts';
-import { infrastructureFailure, infrastructurePayload, InfrastructureRequests, validInfrastructureCache, type Bounds } from './infrastructure_response.ts';
+import { infrastructureFailure, infrastructurePayload, InfrastructureRequests, needsOverpass, validInfrastructureCache, type Bounds } from './infrastructure_response.ts';
 // Public, read-only, geographically bounded fallback. No browser Overpass calls.
 // verify_jwt=false supports Supabase publishable keys. Shared DB cooldown bounds
 // upstream traffic even across Edge isolates and anonymous browser sessions.
@@ -39,6 +39,17 @@ Deno.serve(async request => {
     const categories = [...new Set<string>(p.categories ?? [])].filter(c => allowed.includes(c)).sort();
     if (!categories.length) return reply(infrastructurePayload([],coordinates as Bounds,Date.now()));
     const bounds: Bounds = [Math.floor(p.min_lat*100)/100,Math.floor(p.min_lon*100)/100,Math.ceil(p.max_lat*100)/100,Math.ceil(p.max_lon*100)/100];
+    // Recheck server-side even if a caller bypasses Flutter. Imported empty areas
+    // are legitimate results; missing/stale coverage alone permits fallback.
+    const primary = await db('rpc/infrastructure_viewport', {
+      min_lat:p.min_lat,min_lon:p.min_lon,max_lat:p.max_lat,max_lon:p.max_lon,
+      categories,zoom:p.zoom,after_id:'',
+    });
+    if (!needsOverpass(primary)) return reply({
+      ...infrastructurePayload(primary.items,coordinates as Bounds,Date.now()),
+      coverage:primary.items.length===500 ? 'partial' : primary.coverage,
+      expires_at:primary.expires_at,source:'Supabase regional import',
+    });
     const provider = overpassProvider(Deno.env.get('OVERPASS_URL'));
     const cell = `osm-v3:${provider.host}:${bounds.join(':')}:${categories.join(',')}`;
     const cached = await db(`map_provider_cache?cell=eq.${encodeURIComponent(cell)}&select=payload,expires_at`,undefined,'GET');

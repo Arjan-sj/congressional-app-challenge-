@@ -98,11 +98,16 @@ class MapDataService {
     DateTime Function()? now,
     this.rpcTimeout = const Duration(seconds: 18),
     this.fallbackTimeout = const Duration(seconds: 25),
+    this.requireInfrastructureCoverage = false,
   }) : _fallback = infrastructureFallback,
        _now = now ?? DateTime.now;
 
   factory MapDataService.supabase(SupabaseClient client) => MapDataService(
-    rpc: (name, params) => client.rpc(name, params: params),
+    rpc: (name, params) => client.rpc(
+      name == 'infrastructure_in_view' ? 'infrastructure_viewport' : name,
+      params: params,
+    ),
+    requireInfrastructureCoverage: true,
     infrastructureFallback: (params) async => (await client.functions.invoke(
       'map-infrastructure',
       body: params,
@@ -115,6 +120,7 @@ class MapDataService {
   final Duration debounce;
   final Duration rpcTimeout;
   final Duration fallbackTimeout;
+  final bool requireInfrastructureCoverage;
   final schools = MapSourceState();
   final hazards = MapSourceState();
   final infrastructure = MapSourceState();
@@ -564,6 +570,9 @@ class MapDataService {
     bool clustered = false;
     int total = 0;
     bool infrastructureTruncated = false;
+    bool fallbackRequired = !requireInfrastructureCoverage;
+    InfrastructureCoverage importedCoverage = InfrastructureCoverage.unknown;
+    DateTime? importExpiresAt;
     while (true) {
       if (isCurrent?.call() == false || _disposed) {
         throw const MapDataException(
@@ -577,8 +586,41 @@ class MapDataService {
         isCurrent: isCurrent,
       );
       final parsing = Stopwatch()..start();
+      if (source == 'infrastructure' && raw is Map) {
+        if (raw['fallback_required'] is! bool ||
+            !{
+              'complete',
+              'partial',
+              'missing',
+              'stale',
+            }.contains(raw['import_coverage'])) {
+          throw const FormatException(
+            'Invalid infrastructure coverage metadata',
+          );
+        }
+        fallbackRequired =
+            raw['fallback_required'] == true &&
+            raw['import_coverage'] != 'complete';
+        importedCoverage =
+            InfrastructureCoverage.values
+                .where((value) => value.name == raw['coverage'])
+                .firstOrNull ??
+            InfrastructureCoverage.unknown;
+        importExpiresAt = DateTime.tryParse(
+          raw['expires_at']?.toString() ?? '',
+        );
+        if (importExpiresAt == null || !importExpiresAt.isAfter(_now())) {
+          throw const FormatException(
+            'Expired infrastructure coverage metadata',
+          );
+        }
+      } else if (source == 'infrastructure' && requireInfrastructureCoverage) {
+        throw const FormatException(
+          'Infrastructure coverage migration is required',
+        );
+      }
       final rows = source == 'infrastructure'
-          ? raw as List
+          ? (raw is Map ? raw['items'] as List : raw as List)
           : (raw as Map)['items'] as List;
       items.addAll(rows.map((row) => Map<String, dynamic>.from(row as Map)));
       if (source != 'infrastructure') {
@@ -606,10 +648,13 @@ class MapDataService {
     }
     InfrastructureCoverage coverage = infrastructureTruncated
         ? InfrastructureCoverage.partial
-        : InfrastructureCoverage.unknown;
+        : importedCoverage;
     DateTime? fetchedAt;
-    DateTime? expiresAt;
-    if (source == 'infrastructure' && items.isEmpty && _fallback != null) {
+    DateTime? expiresAt = importExpiresAt;
+    if (source == 'infrastructure' &&
+        items.isEmpty &&
+        fallbackRequired &&
+        _fallback != null) {
       if (isCurrent?.call() == false || _disposed) {
         throw const MapDataException(
           MapFailure.unavailable,
@@ -857,6 +902,9 @@ class MapDataService {
         throw const FormatException('Unsupported infrastructure geometry');
       }
       final coordinates = geometry['coordinates'] as List;
+      // PostGIS viewport clipping can return a valid empty Point/LineString.
+      // It contributes no visible geometry and must not fail the entire layer.
+      if (coordinates.isEmpty) return;
       final parts = type == 'MultiLineString' || type == 'MultiPoint'
           ? coordinates
           : [coordinates];

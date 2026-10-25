@@ -3,9 +3,23 @@ import {
   infrastructurePayload,
   InfrastructureRequests,
   validInfrastructureCache,
+  needsOverpass,
 } from "./infrastructure_response.ts";
 const area: [number, number, number, number] = [42, -88.12, 42.02, -88.10];
 const now = Date.parse("2026-10-24T12:00:00Z");
+Deno.test('only missing/stale/partial empty imports permit upstream calls', () => {
+  for (const state of ['missing', 'stale', 'partial']) {
+    assert(needsOverpass({items:[], import_coverage:state, fallback_required:true}), state);
+    assert(!needsOverpass({items:[{id:'imported'}], import_coverage:state, fallback_required:true}), 'Use existing data');
+  }
+  assert(!needsOverpass({items:[], import_coverage:'complete', fallback_required:true}), 'Covered empty stays empty even with inconsistent flag');
+  assert(!needsOverpass({items:[], import_coverage:'missing', fallback_required:false}), 'Zoom gate respected');
+  for (const bad of [null, [], {items:[]}, {items:[], import_coverage:'unknown', fallback_required:true}]) {
+    let rejected = false;
+    try { needsOverpass(bad); } catch { rejected = true; }
+    assert(rejected, 'Malformed metadata must fail closed');
+  }
+});
 function assert(ok: unknown, message: string) {
   if (!ok) throw new Error(message);
 }

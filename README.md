@@ -17,6 +17,10 @@ Optional infrastructure failures now hide the five infrastructure selection chip
 when no valid current-area cache exists, while keeping Schools, Hazards and Retry
 available. See [Phase 6 map availability, caching and recovery](docs/MAP_INFRASTRUCTURE_AVAILABILITY.md).
 
+Coverage-aware Supabase loading, the reviewed Schaumburg-area import workflow,
+route request deduplication, tile caching audit and routing proxy plan are in
+[Phase 6 infrastructure optimization](docs/PHASE6_INFRASTRUCTURE.md).
+
 For isolated testing, see the [Phase 1 staging hazard workflow](docs/STAGING_HAZARD_WORKFLOW.md):
 separate environment settings, read-only previews, backed-up Storage API cleanup,
 and reproducible synthetic fixtures. Production resets are blocked.

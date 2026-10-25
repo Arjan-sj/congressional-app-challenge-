@@ -40,6 +40,10 @@ transport; diagnostics explicitly combine those two rather than mislabeling them
 
 ## Loading, cache, and visual hierarchy
 
+The coverage-aware loading update and reviewed Schaumburg-area extraction workflow
+are documented in [Phase 6 infrastructure](PHASE6_INFRASTRUCTURE.md). Completed
+regional imports, including valid empty viewports, no longer require Overpass.
+
 `MapDataService` owns a 300 ms movement debounce, source/detail/classification
 cache keys, 15% geographic coverage buffers, a 96-entry memory bound, and separate
 source notifiers. There is at most one active viewport load per source and two

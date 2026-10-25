@@ -33,17 +33,31 @@ class OpenRouteService {
     String? apiKey,
     Uri? baseUri,
     this.requestTimeout = const Duration(seconds: 25),
+    this.cacheTtl = const Duration(seconds: 30),
+    DateTime Function()? now,
   }) : _client = client ?? http.Client(),
        _ownsClient = client == null,
        apiKey =
            apiKey ?? const String.fromEnvironment('OPENROUTESERVICE_API_KEY'),
-       baseUri = baseUri ?? Uri.parse('https://api.openrouteservice.org');
+       baseUri = baseUri ?? Uri.parse('https://api.openrouteservice.org'),
+       _now = now ?? DateTime.now;
 
   final http.Client _client;
   final bool _ownsClient;
   final String apiKey;
   final Uri baseUri;
   final Duration requestTimeout;
+  final Duration cacheTtl;
+  final DateTime Function() _now;
+  final _pending = <String, Future<List<RouteCandidate>>>{};
+  final _cache = <String, ({DateTime time, List<RouteCandidate> routes})>{};
+  int _cacheGeneration = 0;
+
+  void clearCache() {
+    _cacheGeneration++;
+    _cache.clear();
+    _pending.clear();
+  }
 
   static const _avoidanceCircleSegments = 24;
 
@@ -109,6 +123,45 @@ class OpenRouteService {
           'avoid_polygons': _avoidanceGeometry(relevantAvoidLocations),
         },
     };
+    // Exact request geometry is the key: a changed hazard/endpoint/profile must
+    // never reuse a route with different avoidance polygons. No disk persistence.
+    final key = '$endpoint:${jsonEncode(requestBody)}';
+    final cached = _cache[key];
+    if (cached != null && _now().difference(cached.time) < cacheTtl) {
+      return cached.routes;
+    }
+    final existing = _pending[key];
+    if (existing != null) return existing;
+    final generation = _cacheGeneration;
+    final pending = _requestRoutes(
+      endpoint,
+      requestBody,
+      profile,
+      relevantAvoidLocations.length,
+    ).then((routes) => List<RouteCandidate>.unmodifiable(routes));
+    _pending[key] = pending;
+    try {
+      final routes = List<RouteCandidate>.unmodifiable(await pending);
+      if (generation == _cacheGeneration) {
+        _cache.removeWhere(
+          (_, value) => _now().difference(value.time) >= cacheTtl,
+        );
+        _cache.remove(key);
+        if (_cache.length >= 24) _cache.remove(_cache.keys.first);
+        _cache[key] = (time: _now(), routes: routes);
+      }
+      return routes;
+    } finally {
+      if (identical(_pending[key], pending)) _pending.remove(key);
+    }
+  }
+
+  Future<List<RouteCandidate>> _requestRoutes(
+    Uri endpoint,
+    Map<String, dynamic> requestBody,
+    RouteProfile profile,
+    int avoidedHazards,
+  ) async {
     final response = await _client
         .post(
           endpoint,
@@ -161,7 +214,7 @@ class OpenRouteService {
             features[index] as Map<String, dynamic>,
             profile,
             index,
-            relevantAvoidLocations.length,
+            avoidedHazards,
           ),
       ];
     } on FormatException catch (error) {
@@ -202,7 +255,7 @@ class OpenRouteService {
     return RouteCandidate(
       id: '${profile.name}-$index',
       profile: profile,
-      points: points,
+      points: List.unmodifiable(points),
       distanceMeters: (summary['distance'] as num).toDouble(),
       durationSeconds: (summary['duration'] as num).toDouble(),
       avoidedHazards: avoidedHazards,
@@ -276,6 +329,7 @@ class OpenRouteService {
   }
 
   void close() {
+    clearCache();
     if (_ownsClient) _client.close();
   }
 }

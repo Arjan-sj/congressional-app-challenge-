@@ -64,7 +64,8 @@ class MapLayerControls extends StatelessWidget {
     final infrastructureReady = zoom >= 15;
     final status = infrastructureStatus;
     final message = switch (status.availability) {
-      InfrastructureAvailability.unavailable => 'Infrastructure unavailable in this area. Schools and Hazards remain available.',
+      InfrastructureAvailability.unavailable =>
+        'Infrastructure information is temporarily unavailable.',
       InfrastructureAvailability.empty =>
         'No mapped infrastructure was returned for this area.',
       InfrastructureAvailability.cached =>

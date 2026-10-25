@@ -2,6 +2,17 @@
 export type Bounds = [number, number, number, number];
 export const INFRASTRUCTURE_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Missing metadata fails closed: a public request cannot force upstream work. */
+export function needsOverpass(value: unknown): boolean {
+  if (!value || typeof value !== 'object') throw new Error('Coverage unavailable');
+  const p = value as Record<string, unknown>;
+  if (!Array.isArray(p.items) || typeof p.fallback_required !== 'boolean' ||
+      !['complete', 'partial', 'missing', 'stale'].includes(String(p.import_coverage))) {
+    throw new Error('Invalid coverage response');
+  }
+  return p.items.length === 0 && p.import_coverage !== 'complete' && p.fallback_required;
+}
+
 export function infrastructurePayload(
   items: unknown[],
   bounds: Bounds,

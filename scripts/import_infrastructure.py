@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 from import_schools import request
+from infrastructure_coverage import coverage_record, coverage_sql
 
 
 class CrossingIndex:
@@ -73,7 +74,17 @@ def main():
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--sql-dir', help='Prepare SQL batches for trusted database tooling without a local key')
     p.add_argument('--batch-size', type=int, default=300)
+    p.add_argument('--coverage-manifest', help='Complete bounded exporter manifest; validates checksum before any writes')
+    p.add_argument('--fresh-days', type=int, default=14)
     args = p.parse_args()
+    if args.dry_run and args.sql_dir:
+        p.error('Use --dry-run or --sql-dir, not both')
+    if args.sql_dir and Path(args.sql_dir).exists() and any(Path(args.sql_dir).glob('*.sql')):
+        p.error('Use a new SQL output directory; stale batches must not enter a new coverage bundle')
+    # Validate provenance BEFORE sending any feature batches. Coverage is emitted
+    # separately for review and applied last, never auto-registered by this tool.
+    coverage = coverage_record(args.file, args.coverage_manifest, args.region,
+                               args.source_updated_at, 0, args.fresh_days) if args.coverage_manifest else None
     dt.datetime.fromisoformat(args.source_updated_at.replace('Z', '+00:00'))
     if not 1 <= args.batch_size <= 1000:
         p.error('batch-size must be 1..1000')
@@ -137,6 +148,14 @@ on conflict(id) do update set geometry=excluded.geometry,tags=excluded.tags,sour
                 return 1
     if batch:
         flush()
+    if coverage is not None:
+        if skipped:
+            print('Coverage not prepared: invalid geometries were skipped', file=sys.stderr)
+            return 1
+        coverage['feature_count'] = valid
+        if args.sql_dir:
+            (Path(args.sql_dir) / 'coverage-after-review.sql').write_text(coverage_sql(coverage), encoding='utf-8')
+        print(json.dumps(dict(coverage_preview=coverage, coverage_applied=False)))
     print(json.dumps(dict(complete=True, imported=valid, skipped=skipped)))
     return 0
 

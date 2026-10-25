@@ -266,6 +266,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void didUpdateWidget(covariant ExploreScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visibilityVersion != widget.visibilityVersion) {
+      _routeService.clearCache();
       _pendingHazardPermissionRefresh = true;
       _routeReports = [];
       _routeAssessments = [];

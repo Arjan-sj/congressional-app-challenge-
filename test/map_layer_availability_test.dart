@@ -71,7 +71,10 @@ void main() {
         ),
       );
       expectOptionalChips(false);
-      expect(find.textContaining('Infrastructure unavailable'), findsOneWidget);
+      expect(
+        find.text('Infrastructure information is temporarily unavailable.'),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('retry-infrastructure')));
       expect(retries, 1);
       await tester.pumpWidget(

@@ -8,6 +8,60 @@ import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
 
 void main() {
+  test('equivalent concurrent and repeated routes use one ORS request; hazards, profiles and expiry stay distinct', () async {
+    var calls = 0;
+    var now = DateTime.utc(2026);
+    final service = OpenRouteService(
+      apiKey: 'test',
+      now: () => now,
+      client: MockClient((_) async {
+        calls++;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        return _routeResponse();
+      }),
+    );
+    addTearDown(service.close);
+    Future<List<RouteCandidate>> load({
+      RouteProfile profile = RouteProfile.walking,
+      List<LatLng> avoid = const [],
+    }) => service.fetchRoutes(
+      origin: const LatLng(42, -88.1),
+      destination: const LatLng(42.01, -88.11),
+      profile: profile,
+      avoidLocations: avoid,
+    );
+    await Future.wait(List.generate(20, (_) => load()));
+    await load();
+    expect(calls, 1);
+    await load(profile: RouteProfile.cycling);
+    await load(avoid: const [LatLng(42.005, -88.105)]);
+    expect(calls, 3);
+    now = now.add(const Duration(seconds: 31));
+    await load();
+    expect(calls, 4);
+    service.clearCache();
+    await load();
+    expect(calls, 5);
+  });
+  test('failed route requests are never cached', () async {
+    var calls = 0;
+    final service = OpenRouteService(
+      apiKey: 'test',
+      client: MockClient((_) async {
+        calls++;
+        return calls == 1 ? http.Response('limited', 429) : _routeResponse();
+      }),
+    );
+    addTearDown(service.close);
+    Future<List<RouteCandidate>> load() => service.fetchRoutes(
+      origin: const LatLng(42, -88.1),
+      destination: const LatLng(42.01, -88.11),
+      profile: RouteProfile.walking,
+    );
+    await expectLater(load(), throwsA(isA<RouteServiceException>()));
+    expect(await load(), hasLength(1));
+    expect(calls, 2);
+  });
   test('requests GeoJSON with longitude-latitude coordinate order', () async {
     final service = OpenRouteService(
       apiKey: 'test-key',
