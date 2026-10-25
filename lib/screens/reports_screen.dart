@@ -197,7 +197,7 @@ class _ScoreExplanation extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'Reports of the same hazard type within 75 meters are one location group. '
+            'Reports of the same hazard type within about 0.05 mi are one location group. '
             'Recency awards 20 points at 0–7 days, 15 at 8–30, 10 at 31–90, '
             '5 at 91–180, and 0 after 180 days. High priority begins at 70; '
             'elevated begins at 45. Resolved and rejected reports are excluded.',

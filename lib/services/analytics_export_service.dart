@@ -9,6 +9,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/analytics.dart';
+import '../utils/distance_format.dart';
 
 enum AnalyticsExportFormat {
   csv('CSV', 'csv'),
@@ -175,7 +176,7 @@ class AnalyticsExportService {
           'First reported',
           'Resolved',
           'Reports consolidated',
-          'Distance to school (m)',
+          'Distance to school (mi)',
         ],
         for (final marker in data.markers)
           [
@@ -189,7 +190,7 @@ class AnalyticsExportService {
             marker.firstReportedAt.toIso8601String(),
             marker.resolvedAt?.toIso8601String(),
             marker.duplicateCount,
-            marker.distanceToSchoolMeters,
+            metersToMiles(marker.distanceToSchoolMeters),
           ],
       ]);
     }
