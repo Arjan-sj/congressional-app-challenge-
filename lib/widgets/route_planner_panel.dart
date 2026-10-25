@@ -21,6 +21,7 @@ class RoutePlannerPanel extends StatelessWidget {
     required this.onSelectRoute,
     required this.onSetStart,
     required this.onSetEnd,
+    required this.onUseCurrentLocation,
     required this.nearbyReports,
     this.selectedRouteId,
     this.error,
@@ -41,6 +42,7 @@ class RoutePlannerPanel extends StatelessWidget {
   final ValueChanged<RouteSafetyAssessment> onSelectRoute;
   final Future<String?> Function(String) onSetStart;
   final Future<String?> Function(String) onSetEnd;
+  final Future<void> Function() onUseCurrentLocation;
   final List<HazardReport> nearbyReports;
 
   String _coordinate(LatLng? point) => point == null
@@ -103,6 +105,14 @@ class RoutePlannerPanel extends StatelessWidget {
           _LocationEntry(label: 'Start location', onSet: onSetStart),
           const SizedBox(height: 10),
           _LocationEntry(label: 'End location', onSet: onSetEnd),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onUseCurrentLocation,
+              icon: const Icon(Icons.my_location),
+              label: const Text('Use my location as start'),
+            ),
+          ),
           const SizedBox(height: 6),
           const Text('Enter a school name or latitude, longitude. For street addresses, select the point directly on the map.'),
           const SizedBox(height: 14),
