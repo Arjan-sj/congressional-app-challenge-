@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/safety_route.dart';
+import '../models/hazard_report.dart';
 import 'app_ui.dart';
 
 class RoutePlannerPanel extends StatelessWidget {
@@ -20,6 +21,7 @@ class RoutePlannerPanel extends StatelessWidget {
     required this.onSelectRoute,
     required this.onSetStart,
     required this.onSetEnd,
+    required this.nearbyReports,
     this.selectedRouteId,
     this.error,
   });
@@ -39,6 +41,7 @@ class RoutePlannerPanel extends StatelessWidget {
   final ValueChanged<RouteSafetyAssessment> onSelectRoute;
   final Future<String?> Function(String) onSetStart;
   final Future<String?> Function(String) onSetEnd;
+  final List<HazardReport> nearbyReports;
 
   String _coordinate(LatLng? point) => point == null
       ? 'Not selected'
@@ -140,6 +143,27 @@ class RoutePlannerPanel extends StatelessWidget {
             Text(error!, style: TextStyle(color: colors.error)),
           ],
           if (assessments.isNotEmpty) ...[
+            const Divider(height: 30),
+            Text('Reports near selected route (within 150 m)',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text('Nearby reports are not necessarily obstacles. '
+                'Only verified reports affect the route score; '
+                'unverified reports must be checked independently.',
+                style: TextStyle(color: colors.onSurfaceVariant)),
+            if (nearbyReports.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No active, non-demo reports found within 150 m.'),
+              )
+            else
+              for (final report in nearbyReports)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.warning_amber_rounded),
+                  title: Text(report.type.label),
+                  subtitle: Text('Severity ${report.severity}/5 • ${report.status.label}'),
+                ),
             const Divider(height: 30),
             Text(
               'Route alternatives',
