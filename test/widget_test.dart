@@ -26,7 +26,7 @@ void main() {
     expect(find.text('PILOT DATABASE'), findsNothing);
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.remove), findsOneWidget);
-    expect(find.byIcon(Icons.my_location), findsOneWidget);
+    expect(find.byTooltip('Go to my location'), findsOneWidget);
     expect(find.text('Map key'), findsOneWidget);
     expect(find.textContaining('Schools ('), findsOneWidget);
     expect(find.textContaining('Sidewalks ('), findsOneWidget);

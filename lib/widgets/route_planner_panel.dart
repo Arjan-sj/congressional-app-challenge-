@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/safety_route.dart';
+import '../models/hazard_report.dart';
 import 'app_ui.dart';
 
 class RoutePlannerPanel extends StatelessWidget {
@@ -18,6 +19,10 @@ class RoutePlannerPanel extends StatelessWidget {
     required this.onCompare,
     required this.onClear,
     required this.onSelectRoute,
+    required this.onSetStart,
+    required this.onSetEnd,
+    required this.onUseCurrentLocation,
+    required this.nearbyReports,
     this.selectedRouteId,
     this.error,
   });
@@ -35,6 +40,10 @@ class RoutePlannerPanel extends StatelessWidget {
   final VoidCallback onCompare;
   final VoidCallback onClear;
   final ValueChanged<RouteSafetyAssessment> onSelectRoute;
+  final Future<String?> Function(String) onSetStart;
+  final Future<String?> Function(String) onSetEnd;
+  final Future<void> Function() onUseCurrentLocation;
+  final List<HazardReport> nearbyReports;
 
   String _coordinate(LatLng? point) => point == null
       ? 'Not selected'
@@ -93,6 +102,20 @@ class RoutePlannerPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
+          _LocationEntry(label: 'Start location', onSet: onSetStart),
+          const SizedBox(height: 10),
+          _LocationEntry(label: 'End location', onSet: onSetEnd),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onUseCurrentLocation,
+              icon: const Icon(Icons.my_location),
+              label: const Text('Use my location as start'),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text('Enter a school name or latitude, longitude. For street addresses, select the point directly on the map.'),
+          const SizedBox(height: 14),
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -130,6 +153,27 @@ class RoutePlannerPanel extends StatelessWidget {
             Text(error!, style: TextStyle(color: colors.error)),
           ],
           if (assessments.isNotEmpty) ...[
+            const Divider(height: 30),
+            Text('Reports near selected route (within 150 m)',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text('Nearby reports are not necessarily obstacles. '
+                'Only verified reports affect the route score; '
+                'unverified reports must be checked independently.',
+                style: TextStyle(color: colors.onSurfaceVariant)),
+            if (nearbyReports.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('No active, non-demo reports found within 150 m.'),
+              )
+            else
+              for (final report in nearbyReports)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.warning_amber_rounded),
+                  title: Text(report.type.label),
+                  subtitle: Text('Severity ${report.severity}/5 • ${report.status.label}'),
+                ),
             const Divider(height: 30),
             Text(
               'Route alternatives',
@@ -299,4 +343,55 @@ class _RouteResultCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LocationEntry extends StatefulWidget {
+  const _LocationEntry({required this.label, required this.onSet});
+  final String label;
+  final Future<String?> Function(String) onSet;
+  @override
+  State<_LocationEntry> createState() => _LocationEntryState();
+}
+
+class _LocationEntryState extends State<_LocationEntry> {
+  final controller = TextEditingController();
+  String? message;
+  bool busy = false;
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+  Future<void> submit() async {
+    if (busy) return;
+    setState(() { busy = true; message = null; });
+    try {
+      final result = await widget.onSet(controller.text.trim());
+      if (mounted) setState(() => message = result ?? 'Location selected.');
+    } catch (_) {
+      if (mounted) setState(() => message = 'Location lookup unavailable.');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(widget.label, style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 6),
+      Row(children: [
+        Expanded(child: TextField(
+          key: ValueKey(widget.label == 'Start location' ? 'route-start-entry' : 'route-end-entry'),
+          controller: controller,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => submit(),
+          decoration: const InputDecoration(hintText: 'School name or 42.0274, -88.1066'),
+        )),
+        const SizedBox(width: 8),
+        FilledButton.tonal(onPressed: busy ? null : submit, child: Text(busy ? 'Searching…' : 'Set')),
+      ]),
+      if (message != null) Text(message!, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 }
