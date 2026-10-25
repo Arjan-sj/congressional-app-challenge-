@@ -5,8 +5,13 @@ import '../models/school.dart';
 class RouteSchoolMatch {
   const RouteSchoolMatch._();
 
+  static String searchText(String value) => value.replaceAllMapped(
+    RegExp(r'\b(high|middle|elementary)school\b', caseSensitive: false),
+    (match) => '${match[1]} school',
+  );
+
   static String normalize(String value) =>
-      value.toLowerCase().trim().replaceAll(RegExp(r'[\s.,_-]+'), ' ');
+      searchText(value).toLowerCase().trim().replaceAll(RegExp(r'[\s.,_-]+'), ' ');
 
   static School? uniqueBestMatch(String query, List<School> schools) {
     if (schools.isEmpty) return null;

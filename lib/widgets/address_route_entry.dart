@@ -87,6 +87,41 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
   Future<void> submit([AddressSuggestion? suggestion]) async {
     debounce?.cancel();
     final current = ++version;
+    final text = controller.text.trim();
+    final parts = text.split(',');
+    final coordinates = parts.length == 2 &&
+        parts.every((part) => double.tryParse(part.trim()) != null);
+    if (suggestion == null && chosen != null) {
+      suggestion = AddressSuggestion(text, chosen!);
+    }
+    if (suggestion == null && !coordinates && widget.search != null &&
+        (suggestions.isNotEmpty || RegExp(r'^\d+\s+\S').hasMatch(text))) {
+      setState(() { busy = true; message = null; });
+      try {
+        final results = suggestions.isNotEmpty ? suggestions : await widget.search!(text);
+        if (!mounted || current != version) return;
+        if (results.length != 1) {
+          setState(() {
+            suggestions = results;
+            busy = false;
+            message = results.isEmpty
+                ? 'No addresses found. Include city, state or ZIP, or use the map.'
+                : 'Choose the correct address below.';
+          });
+          return;
+        }
+        suggestion = results.single;
+      } catch (error) {
+        if (mounted && current == version) {
+          setState(() {
+            busy = false;
+            message = error is AddressSearchException
+                ? error.message : 'Address search unavailable. Retry or use the map.';
+          });
+        }
+        return;
+      }
+    }
     editing = false;
     chosen = suggestion?.location;
     if (suggestion != null) controller.text = suggestion.label;
@@ -138,7 +173,7 @@ class _AddressRouteEntryState extends State<AddressRouteEntry> {
         ListTile(title: Text(suggestion.label), leading: const Icon(Icons.place_outlined),
           onTap: () => submit(suggestion)),
       if (suggestions.isNotEmpty)
-        const Text('Geocoding: OpenRouteService / Pelias. Data: OpenStreetMap contributors, OpenAddresses, GeoNames, Who’s On First.'),
+        const Text('Schools: NCES. Geocoding: OpenRouteService / Pelias. Data: OpenStreetMap contributors, OpenAddresses, GeoNames, Who’s On First.'),
       if (message != null) Text(message!, semanticsLabel: message),
       if (widget.search == null)
         const Text('Address search unavailable. Use a school name, coordinates or the map.'),

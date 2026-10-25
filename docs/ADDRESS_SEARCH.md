@@ -7,6 +7,13 @@ Coordinates, school-name lookup, map clicks and device location still work. Edit
 a selected address invalidates that endpoint and its previous comparison. No
 result is silently selected or assumed to be a school entrance.
 
+Named schools use the existing nationwide NCES directory first, with the address
+provider as fallback. Compound words such as `Highschool` are accepted as
+`High School`. Directory results include the school's official street address,
+city, state and ZIP. This avoids treating a missing geocoder venue as a missing
+school. Explicit Set/Enter resolves a unique address result; multiple matches
+remain visible for selection. A previously selected result retains its coordinates.
+
 ## Deployment
 
 1. Apply `20261025223000_address_search_limits.sql` through the normal migration

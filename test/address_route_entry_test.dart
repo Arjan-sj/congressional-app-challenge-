@@ -6,6 +6,59 @@ import 'package:congressional_app/services/address_search_service.dart';
 import 'package:congressional_app/widgets/address_route_entry.dart';
 
 void main() {
+  testWidgets('school and coordinate submissions retain the existing lookup path', (tester) async {
+    final selected = <String>[];
+    var addressCalls = 0;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AddressRouteEntry(
+      label: 'Start location', onSet: (value) async { selected.add(value); return null; },
+      search: (_) async { addressCalls++; return []; },
+    ))));
+    for (final input in ['42.3, -71.1', 'Schaumburg High School']) {
+      await tester.enterText(find.byType(TextField), input);
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+    }
+    expect(selected, ['42.3, -71.1', 'Schaumburg High School']);
+    expect(addressCalls, 0);
+  });
+
+  testWidgets('Enter geocodes an address before debounce and Set reuses its coordinates', (tester) async {
+    final selected = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AddressRouteEntry(
+      label: 'Start location', onSet: (value) async { selected.add(value); return null; },
+      search: (_) async => [const AddressSuggestion('123 Main St, Boston, MA', LatLng(42.3, -71.1))],
+    ))));
+    await tester.enterText(find.byType(TextField), '123 Main St Boston MA');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    expect(selected, ['42.3, -71.1']);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '123 Main St, Boston, MA');
+    await tester.tap(find.text('Set'));
+    await tester.pump();
+    expect(selected, ['42.3, -71.1', '42.3, -71.1']);
+  });
+
+  testWidgets('Set preserves ambiguous address choices without school lookup', (tester) async {
+    final selected = <String>[];
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: AddressRouteEntry(
+      label: 'End location', onSet: (value) async { selected.add(value); return null; },
+      search: (_) async => [
+        const AddressSuggestion('123 Main St, Boston, MA', LatLng(42.3, -71.1)),
+        const AddressSuggestion('123 Main St, Albany, NY', LatLng(42.6, -73.7)),
+      ],
+    ))));
+    await tester.enterText(find.byType(TextField), '123 Main');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pump();
+    await tester.tap(find.text('Set'));
+    await tester.pump();
+    expect(selected, isEmpty);
+    expect(find.text('Choose the correct address below.'), findsOneWidget);
+    await tester.tap(find.text('123 Main St, Albany, NY'));
+    await tester.pump();
+    expect(selected, ['42.6, -73.7']);
+  });
+
   testWidgets('debounces typing and selecting an address submits coordinates', (tester) async {
     var calls = 0;
     String? selected;

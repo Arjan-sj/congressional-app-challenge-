@@ -28,6 +28,11 @@ void main() {
       '1',
     );
   });
+  test('compound school words match official names without changing street names', () {
+    expect(RouteSchoolMatch.uniqueBestMatch('Schaumburg Highschool', [other, schaumburg])?.id, '1');
+    expect(RouteSchoolMatch.searchText('Lincoln MIDDLESCHOOL'), 'Lincoln MIDDLE school');
+    expect(RouteSchoolMatch.searchText('123 HighschoolRoad'), '123 HighschoolRoad');
+  });
   test('ambiguous searches do not silently choose a random school', () {
     expect(
       RouteSchoolMatch.uniqueBestMatch('schaumburg', [other, schaumburg]),
