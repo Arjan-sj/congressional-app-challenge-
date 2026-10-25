@@ -125,11 +125,7 @@ class _CommunityReviewDialogState extends State<CommunityReviewDialog> {
               ],
               const Divider(height: 28),
               const Text(
-                'Share what you observed. Three agreeing reviews from independent network connections change the status. One review per browser and connection in each round; you can revise your own vote. A new round has a 15-minute cooldown after a decision.',
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Community agreement is not professional verification or a safety guarantee. Reviews cannot prove that each visitor is a different person.',
+                'Share what you observed. Three agreeing reviews from independent network connections change the status. One review per browser and connection in each round; you can revise your own vote.',
               ),
               if (data != null) ...[
                 const SizedBox(height: 16),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../utils/distance_format.dart';
 import '../models/nearby_school.dart';
 import '../models/hazard_photo.dart';
 import '../models/hazard_report.dart';
@@ -91,7 +92,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
       setState(() {
         _school = schools.firstOrNull;
         if (schools.isEmpty) {
-          _schoolError = 'No schools were found within 2,000 meters. Choose another location; this report cannot be submitted without an appropriate nearby school.';
+          _schoolError = 'No schools were found within about 1.24 miles. Choose another location; this report cannot be submitted without an appropriate nearby school.';
         }
       });
     } catch (_) {
@@ -408,7 +409,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
                                   ),
                               ] else if (_school case final school?)
                                 Text(
-                                  'Automatically associated with ${school.name} (${school.distanceMeters.round()} m away)',
+                                  'Automatically associated with ${school.name} (${formatMiles(school.distanceMeters)} away)',
                                   key: const ValueKey('automatic-school'),
                                 )
                               else

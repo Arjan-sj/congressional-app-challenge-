@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../utils/distance_format.dart';
 import '../models/safety_route.dart';
 import '../models/hazard_report.dart';
 import 'app_ui.dart';
@@ -162,7 +163,7 @@ class RoutePlannerPanel extends StatelessWidget {
           ],
           if (assessments.isNotEmpty) ...[
             const Divider(height: 30),
-            Text('Reports near selected route (within 150 m)',
+            Text('Reports near selected route (within about 0.09 mi)',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text('Nearby reports are not necessarily obstacles. '
@@ -172,7 +173,7 @@ class RoutePlannerPanel extends StatelessWidget {
             if (nearbyReports.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('No active, non-demo reports found within 150 m.'),
+                child: Text('No active, non-demo reports found within about 0.09 mi.'),
               )
             else
               for (final report in nearbyReports)
@@ -189,7 +190,7 @@ class RoutePlannerPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − reviewed unresolved concerns (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
+              'Routes first avoid approximately 0.06 mi buffers around active reports. Score = 80 base − up to 15 for extra distance − reviewed unresolved concerns (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
@@ -311,7 +312,7 @@ class _RouteResultCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${route.profile.label} • ${(route.distanceMeters / 1000).toStringAsFixed(2)} km • ${(route.durationSeconds / 60).round()} min',
+                      '${route.profile.label} • ${formatMiles(route.distanceMeters)} • ${(route.durationSeconds / 60).round()} min',
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                   ),
@@ -333,7 +334,7 @@ class _RouteResultCard extends StatelessWidget {
               Text(
                 route.avoidedHazards == 0
                     ? 'No active report buffers were inside this route area.'
-                    : 'Avoided ${route.avoidedHazards} active report ${route.avoidedHazards == 1 ? 'area' : 'areas'} using 100 m buffers.',
+                    : 'Avoided ${route.avoidedHazards} active report ${route.avoidedHazards == 1 ? 'area' : 'areas'} using approximately 0.06 mi buffers.',
                 style: Theme.of(context).textTheme.bodySmall
                     ?.copyWith(color: colors.onSurfaceVariant),
               ),

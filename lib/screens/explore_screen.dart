@@ -1943,8 +1943,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 18),
-                const _SafetyNotice(),
               ],
             ),
           ),
@@ -2183,48 +2181,6 @@ class _TapMapHint extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SafetyNotice extends StatelessWidget {
-  const _SafetyNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7E8),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF1D9A7)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.shield_outlined, color: Color(0xFF795300)),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Not a verified safety map',
-                  style: TextStyle(
-                    color: Color(0xFF604300),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Infrastructure comes from OpenStreetMap and may be incomplete or outdated; missing features are unknown, not unsafe. Community reports retain their displayed review status. Route scores are a transparent comparison aid, not a safety guarantee.',
-                  style: TextStyle(color: Color(0xFF795E25), height: 1.4),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

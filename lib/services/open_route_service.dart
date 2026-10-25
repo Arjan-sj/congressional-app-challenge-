@@ -221,7 +221,7 @@ class OpenRouteService {
     if (response.statusCode == 400 || response.statusCode == 404) {
       throw const RouteServiceException(
         RouteFailure.noRoute,
-        'No route could avoid the active 100 m report areas. Try moving an endpoint or selecting a shorter trip.',
+        'No route could avoid the active report areas (approximately 0.06 mi buffers). Try moving an endpoint or selecting a shorter trip.',
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -323,7 +323,7 @@ class OpenRouteService {
           destinationDistance < HazardAvoidanceService.radiusMeters) {
         throw const RouteServiceException(
           RouteFailure.endpointInsideHazard,
-          'The route start or destination is within 100 m of an active report. Move the point outside the highlighted area.',
+          'The route start or destination is within about 0.06 mi of an active report. Move the point outside the highlighted area.',
         );
       }
     }
