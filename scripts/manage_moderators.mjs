@@ -45,10 +45,6 @@ export function argumentsFor(argv) {
 }
 
 export async function run(argv,env=process.env,request=fetch) {
-  if(argv[0]==='applications'){
-    const {runApplications}=await import('./manage_moderator_applications.mjs');
-    return runApplications(argv.slice(1),env,request);
-  }
   const input=argumentsFor(argv), config=configuration(env), o=input.options;
   const mutation=['grant','revoke'].includes(input.action);
   requireValue(!o.apply||o['confirm-project']===config.projectId,'--confirm-project must exactly match before applying a membership change.');

@@ -137,7 +137,7 @@ class RoutePlannerPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − verified unresolved hazards (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
+              'Routes first avoid 100 m buffers around active reports. Score = 80 base − up to 15 for extra distance − reviewed unresolved concerns (severity × 4, capped at 40) + up to 20 for mapped mode-appropriate infrastructure. Missing OSM data is unknown and receives no penalty.',
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
@@ -273,7 +273,7 @@ class _RouteResultCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Distance −${assessment.distancePenalty.toStringAsFixed(1)} • '
-                'Verified hazards −${assessment.hazardPenalty.toStringAsFixed(0)} '
+                'Reviewed concerns −${assessment.hazardPenalty.toStringAsFixed(0)} '
                 '(${assessment.nearbyVerifiedHazards}) • '
                 'Mapped infrastructure +${assessment.infrastructureBonus.toStringAsFixed(1)}',
               ),

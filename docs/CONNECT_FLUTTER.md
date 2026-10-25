@@ -18,7 +18,7 @@ flutter test
 Verify the Supabase dashboard shows both tables. Then obtain **only** the
 project URL and **publishable** API key from Supabase → Connect / API keys.
 
-Run locally using a fixed port and compile-time environment values so authentication redirects work:
+Run locally using a fixed port and compile-time environment values for a repeatable development URL:
 
 ```bash
 flutter run -d chrome --web-port 7357 \
@@ -33,20 +33,8 @@ Routing uses the `route-directions` Supabase Edge Function and its server-only
 `OPENROUTESERVICE_API_KEY` secret. No ORS Dart define is needed. See
 [server routing setup](ROUTING_PROXY.md).
 
-Supabase → Authentication → URL Configuration: allow `http://localhost:7357`
-as a redirect URL for testing email confirmation. Enable the email provider and
-email confirmation. Deploy the Phase 9 migration and `account-auth` Edge Function
-before testing account flows; see [account setup and native callbacks](ACCOUNTS.md).
+Apply the existing migrations followed by `20261025211230_anonymous_community_review.sql`, then deploy the `community-reports` Edge Function before releasing the new client. See [anonymous community setup and privacy](COMMUNITY_REVIEW.md).
 
-In SafeRoutes, open the account icon, create or sign in to a test account.
-Select a map location and submit an observation without personal information. It will persist as
-`is_demo=false`, `unverified`, visible to its own author, not publicly
-verified. Refresh Chrome to test persistence. See [Moderation setup](MODERATION.md)
-to deploy the moderation migration and provision reviewer accounts.
+Select a map pin and share a concern. It starts unverified and is visible for public community review. Photos on new submissions are also public; avoid identifiable children and personal travel details. Three agreeing reviews from independent connections are required to change the status. No email sender or personal identity setup is required.
 
-If the screen says database connection failed, check the migration deployed
-and RLS rules were applied. **Do not disable RLS** as a workaround.
-
-The production deployment needs abuse safeguards, age-appropriate privacy,
-operational moderator staffing, and an explicit review process. Avoid actual student
-locations or commuting patterns for tests.
+If report loading fails, check the deployed migrations, function and RLS policies. **Do not disable RLS** as a workaround. Historical private reports/photos remain protected. Use an explicitly authorized isolated test environment for fixture submissions and consensus testing; do not cast synthetic votes on real concerns.
