@@ -164,7 +164,7 @@ void main() {
         moderator ? findsOneWidget : findsNothing,
       );
       expect(find.textContaining('Database connection failed'), findsNothing);
-      expect(find.text(moderator ? 'STAGING' : 'LOCAL'), findsOneWidget);
+      expect(find.text(moderator ? 'STAGING' : 'LOCAL'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }

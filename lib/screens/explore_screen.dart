@@ -89,7 +89,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   String? _tileError;
   int _tileGeneration = 0;
   bool _diagnostics = false;
-  final OpenRouteService _routeService = OpenRouteService();
+  late final OpenRouteService _routeService;
   final HazardAvoidanceService _hazardAvoidanceService =
       const HazardAvoidanceService();
   final DeviceLocationService _locationService = const DeviceLocationService();
@@ -127,6 +127,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void initState() {
     super.initState();
+    _routeService = widget.liveClient == null
+        ? OpenRouteService()
+        : OpenRouteService.supabase(widget.liveClient!);
     if (widget.mapDataService != null ||
         widget.enableMapTiles && widget.liveClient != null) {
       final data = _mapData =
@@ -1606,20 +1609,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         ),
                                       MarkerLayer(markers: markers),
                                     ],
-                                  ),
-                                  Positioned(
-                                    left: 12,
-                                    top: 12,
-                                    child: StatusPill(
-                                      label: widget.isLive
-                                          ? 'PILOT DATABASE'
-                                          : 'SUPABASE NOT CONFIGURED',
-                                      icon: Icons.info_outline,
-                                      backgroundColor: Colors.white.withValues(
-                                        alpha: .94,
-                                      ),
-                                      foregroundColor: const Color(0xFF604300),
-                                    ),
                                   ),
                                   Positioned(
                                     right: 12,

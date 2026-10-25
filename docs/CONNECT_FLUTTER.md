@@ -23,12 +23,15 @@ Run locally using a fixed port and compile-time environment values so authentica
 ```bash
 flutter run -d chrome --web-port 7357 \
   --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
-  --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY \
-  --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 ```
 
 These are client-visible values. **NEVER** put a secret key, service_role key,
 database password or personal access token into Flutter or GitHub.
+
+Routing uses the `route-directions` Supabase Edge Function and its server-only
+`OPENROUTESERVICE_API_KEY` secret. No ORS Dart define is needed. See
+[server routing setup](ROUTING_PROXY.md).
 
 Supabase → Authentication → URL Configuration: allow `http://localhost:7357`
 as a redirect URL for testing email confirmation. Email provider must be

@@ -1,2 +1,6 @@
 [functions.map-infrastructure]
 verify_jwt = false
+
+[functions.route-directions]
+# The handler validates the project key and any signed-in user itself.
+verify_jwt = false

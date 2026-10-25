@@ -21,7 +21,9 @@ void main() {
     expect(find.text('Search schools and communities'), findsOneWidget);
     expect(find.text('Map information in text'), findsNothing);
     expect(find.byTooltip('Accessibility settings'), findsOneWidget);
-    expect(find.text('PROTOTYPE'), findsOneWidget);
+    expect(find.text('PROTOTYPE'), findsNothing);
+    expect(find.text('PRODUCTION'), findsNothing);
+    expect(find.text('PILOT DATABASE'), findsNothing);
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(find.byIcon(Icons.remove), findsOneWidget);
     expect(find.byIcon(Icons.my_location), findsOneWidget);

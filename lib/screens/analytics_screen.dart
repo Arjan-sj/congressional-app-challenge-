@@ -1039,7 +1039,7 @@ class _AnalyticsMap extends StatelessWidget {
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'org.saferoutes.prototype',
+                      userAgentPackageName: 'org.saferoutes.cac',
                     ),
                   CircleLayer(
                     circles: [

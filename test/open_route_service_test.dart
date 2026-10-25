@@ -6,8 +6,86 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
+  test('Supabase transport compares both profiles without a client ORS key and preserves avoidance', () async {
+    final requestedProfiles = <String>[];
+    final client = SupabaseClient(
+      'https://example.supabase.co',
+      'public-project-key',
+      httpClient: MockClient((request) async {
+        expect(request.url.host, 'example.supabase.co');
+        expect(request.url.path, '/functions/v1/route-directions');
+        expect(request.headers['apikey'], 'public-project-key');
+        expect(request.headers['Authorization'], isNot(contains('ors-secret')));
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        requestedProfiles.add(body['profile'] as String);
+        expect(body['coordinates'], [
+          [-88.1, 42.0],
+          [-88.11, 42.01],
+        ]);
+        expect(body['options']['avoid_polygons']['type'], 'Polygon');
+        expect(body.containsKey('api_key'), isFalse);
+        return _routeResponse();
+      }),
+    );
+    addTearDown(client.dispose);
+    final service = OpenRouteService.supabase(client);
+    addTearDown(service.close);
+    expect(service.apiKey, isEmpty);
+    expect(service.isConfigured, isTrue);
+    final routes = await service.compare(
+      origin: const LatLng(42, -88.1),
+      destination: const LatLng(42.01, -88.11),
+      avoidLocations: const [LatLng(42.005, -88.105)],
+    );
+    expect(routes, hasLength(2));
+    expect(
+      requestedProfiles,
+      unorderedEquals(['foot-walking', 'cycling-regular']),
+    );
+    expect(routes.every((r) => r.avoidedHazards == 1), isTrue);
+  });
+  test(
+    'Edge Function rate limit becomes a routing error and can recover',
+    () async {
+      var limited = true;
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'public-project-key',
+        httpClient: MockClient(
+          (_) async => limited
+              ? http.Response(
+                  '{"error":"cooling down"}',
+                  429,
+                  headers: {'content-type': 'application/json'},
+                )
+              : _routeResponse(),
+        ),
+      );
+      addTearDown(client.dispose);
+      final service = OpenRouteService.supabase(client);
+      addTearDown(service.close);
+      Future<List<RouteCandidate>> load() => service.fetchRoutes(
+        origin: const LatLng(42, -88.1),
+        destination: const LatLng(42.01, -88.11),
+        profile: RouteProfile.walking,
+      );
+      await expectLater(
+        load(),
+        throwsA(
+          isA<RouteServiceException>().having(
+            (e) => e.failure,
+            'failure',
+            RouteFailure.rateLimited,
+          ),
+        ),
+      );
+      limited = false;
+      expect(await load(), hasLength(1));
+    },
+  );
   test('equivalent concurrent and repeated routes use one ORS request; hazards, profiles and expiry stay distinct', () async {
     var calls = 0;
     var now = DateTime.utc(2026);

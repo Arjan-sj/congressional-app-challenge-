@@ -122,7 +122,7 @@ class RoutePlannerPanel extends StatelessWidget {
           if (!configured) ...[
             const SizedBox(height: 12),
             const Text(
-              'Run with --dart-define=OPENROUTESERVICE_API_KEY=… to enable routing. Keep production keys restricted or proxy requests server-side.',
+              'Route comparison is temporarily unavailable. Please try again later.',
             ),
           ],
           if (error != null) ...[

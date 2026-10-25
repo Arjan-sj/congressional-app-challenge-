@@ -20,11 +20,14 @@ The existing public Supabase URL and publishable key are configured in
 configuration:
 
 ```bash
-flutter run -d chrome --web-port 7357 --dart-define=OPENROUTESERVICE_API_KEY=YOUR_ORS_KEY
+flutter run -d chrome --web-port 7357
 ```
 
 `MAP_TILE_URL` can select a compatible raster provider. Infrastructure provider
 configuration is now server-side; see [deployment](NATIONWIDE_MAP.md).
+
+Route requests use the `route-directions` Supabase Edge Function. Its
+`OPENROUTESERVICE_API_KEY` secret stays on the server; see [routing](ROUTING_PROXY.md).
 
 ## Infrastructure loading
 

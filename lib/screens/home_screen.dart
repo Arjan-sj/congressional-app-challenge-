@@ -590,43 +590,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     : Icons.account_circle_outlined,
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF1D6),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: const Color(0xFFF5D495)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.science_outlined,
-                      size: 14,
-                      color: Color(0xFF8A5A00),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      _live
-                          ? widget.environmentName.toUpperCase()
-                          : 'PROTOTYPE',
-                      style: const TextStyle(
-                        color: Color(0xFF704900),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .6,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ],
       ),
       body: LayoutBuilder(

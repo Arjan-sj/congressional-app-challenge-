@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/safety_route.dart';
 import 'hazard_avoidance_service.dart';
@@ -35,12 +36,32 @@ class OpenRouteService {
     this.requestTimeout = const Duration(seconds: 25),
     this.cacheTtl = const Duration(seconds: 30),
     DateTime Function()? now,
+    this.routeRequest,
   }) : _client = client ?? http.Client(),
        _ownsClient = client == null,
-       apiKey =
-           apiKey ?? const String.fromEnvironment('OPENROUTESERVICE_API_KEY'),
+       apiKey = apiKey ?? '',
        baseUri = baseUri ?? Uri.parse('https://api.openrouteservice.org'),
        _now = now ?? DateTime.now;
+
+  factory OpenRouteService.supabase(SupabaseClient client) => OpenRouteService(
+    requestTimeout: const Duration(seconds: 30),
+    routeRequest: (profile, body) async {
+      try {
+        final response = await client.functions.invoke(
+          'route-directions',
+          body: {'profile': profile.apiValue, ...body},
+        );
+        return http.Response(
+          response.data is String
+              ? response.data as String
+              : jsonEncode(response.data),
+          response.status,
+        );
+      } on FunctionException catch (error) {
+        return http.Response('{}', error.status);
+      }
+    },
+  );
 
   final http.Client _client;
   final bool _ownsClient;
@@ -49,6 +70,8 @@ class OpenRouteService {
   final Duration requestTimeout;
   final Duration cacheTtl;
   final DateTime Function() _now;
+  final Future<http.Response> Function(RouteProfile, Map<String, dynamic>)?
+  routeRequest;
   final _pending = <String, Future<List<RouteCandidate>>>{};
   final _cache = <String, ({DateTime time, List<RouteCandidate> routes})>{};
   int _cacheGeneration = 0;
@@ -61,7 +84,7 @@ class OpenRouteService {
 
   static const _avoidanceCircleSegments = 24;
 
-  bool get isConfigured => apiKey.trim().isNotEmpty;
+  bool get isConfigured => routeRequest != null || apiKey.trim().isNotEmpty;
 
   Future<List<RouteCandidate>> compare({
     required LatLng origin,
@@ -71,7 +94,7 @@ class OpenRouteService {
     if (!isConfigured) {
       throw const RouteServiceException(
         RouteFailure.missingApiKey,
-        'Add OPENROUTESERVICE_API_KEY with --dart-define to compare routes.',
+        'Route comparison is temporarily unavailable.',
       );
     }
     final results = await Future.wait([
@@ -162,22 +185,25 @@ class OpenRouteService {
     RouteProfile profile,
     int avoidedHazards,
   ) async {
-    final response = await _client
-        .post(
-          endpoint,
-          headers: {
-            'Accept': 'application/geo+json, application/json',
-            'Authorization': apiKey,
-            'Content-Type': 'application/json; charset=utf-8',
-          },
-          body: jsonEncode(requestBody),
-        )
-        .timeout(requestTimeout);
+    final transport = routeRequest;
+    final response = transport != null
+        ? await transport(profile, requestBody).timeout(requestTimeout)
+        : await _client
+              .post(
+                endpoint,
+                headers: {
+                  'Accept': 'application/geo+json, application/json',
+                  'Authorization': apiKey,
+                  'Content-Type': 'application/json; charset=utf-8',
+                },
+                body: jsonEncode(requestBody),
+              )
+              .timeout(requestTimeout);
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw const RouteServiceException(
         RouteFailure.unauthorized,
-        'OpenRouteService rejected the API key. Check OPENROUTESERVICE_API_KEY.',
+        'Route access could not be verified. Refresh the app and try again.',
       );
     }
     if (response.statusCode == 429) {

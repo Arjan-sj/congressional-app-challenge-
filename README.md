@@ -1,8 +1,8 @@
 # SafeRoutes 🚸
 
-A Flutter prototype for documenting school walking and biking concerns. Built for the Congressional App Challenge.
+A Flutter application for documenting school walking and biking concerns. Built for the Congressional App Challenge.
 
-> **Current stage: Pilot prototype.** The Flutter app includes imported nationwide NCES schools and cached OpenStreetMap infrastructure, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
+The Flutter app includes imported nationwide NCES schools and cached OpenStreetMap infrastructure, walking/cycling route comparison through OpenRouteService, Supabase-backed report submission and moderation, hazard ranking, device location, and accessibility settings. Route scores are decision aids, not safety guarantees.
 
 The separate Analytics workspace adds RLS-aware overview metrics, trends,
 interactive hazard heatmaps, school/category comparisons, Realtime refresh,
@@ -20,6 +20,9 @@ available. See [Phase 6 map availability, caching and recovery](docs/MAP_INFRAST
 Coverage-aware Supabase loading, the reviewed Schaumburg-area import workflow,
 route request deduplication, tile caching audit and routing proxy plan are in
 [Phase 6 infrastructure optimization](docs/PHASE6_INFRASTRUCTURE.md).
+
+Routing uses the server-only `OPENROUTESERVICE_API_KEY` Supabase Edge secret through
+the [route-directions proxy](docs/ROUTING_PROXY.md); no ORS key is compiled into Flutter.
 
 For isolated testing, see the [Phase 1 staging hazard workflow](docs/STAGING_HAZARD_WORKFLOW.md):
 separate environment settings, read-only previews, backed-up Storage API cleanup,

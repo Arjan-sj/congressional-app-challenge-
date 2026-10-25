@@ -92,7 +92,7 @@ and `--sql-dir`. Coverage is not prepared when any geometry was skipped.
 
 ## Routing key audit and proposed proxy
 
-`OpenRouteService` currently sends `OPENROUTESERVICE_API_KEY` from a Dart define in
+Before the routing proxy update, `OpenRouteService` sent `OPENROUTESERVICE_API_KEY` from a Dart define in
 the client Authorization header. Compiled web/mobile clients expose that key;
 obfuscation and CORS do not secure it. No key values were copied or printed.
 This change keeps ORS profiles, GeoJSON decoding, alternatives, 100 m avoidance and
@@ -120,7 +120,8 @@ A future, separately approved `route-directions` Edge proxy should:
   remain intact. Test revoked sessions, malicious payloads, quota races, failures,
   alternatives and privacy before enabling; provide a reviewed rollback switch.
 
-No routing proxy, secrets, paid service or new routing engine was deployed.
+The subsequent [routing proxy update](ROUTING_PROXY.md) implements the server-only
+secret path. No paid service or new routing engine is used.
 
 ## Tiles and verification
 
