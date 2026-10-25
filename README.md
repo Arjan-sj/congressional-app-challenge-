@@ -37,6 +37,9 @@ reviews from independent connections change a report's status. See
 
 ## Run locally (macOS or Linux)
 
+For nationwide street-address autocomplete in the route planner, see
+[Address search deployment and usage limits](docs/ADDRESS_SEARCH.md).
+
 Install [Flutter](https://docs.flutter.dev/get-started/install), Git, and Google Chrome first. Then:
 
 ```bash
