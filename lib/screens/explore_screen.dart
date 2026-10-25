@@ -580,6 +580,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return null;
   }
 
+  List<HazardReport> get _selectedRouteIssues {
+    final selected = _routeAssessments
+        .where((assessment) => assessment.route.id == _selectedRouteId)
+        .firstOrNull;
+    if (selected == null) return const [];
+    return _routeScorer.reportsNearRoute(
+      selected.route.points,
+      _routeReports,
+    );
+  }
+
   void _useSelectedAsRouteOrigin() {
     if (_selectedPoint == null) return;
     setState(() {
@@ -1655,6 +1666,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                               ),
                                           ],
                                         ),
+                                      if (_selectedRouteIssues.isNotEmpty)
+                                        CircleLayer(
+                                          key: const ValueKey('near-route-issues-layer'),
+                                          circles: [
+                                            for (final report in _selectedRouteIssues)
+                                              CircleMarker(
+                                                point: LatLng(
+                                                  report.latitude!,
+                                                  report.longitude!,
+                                                ),
+                                                radius: 45,
+                                                useRadiusInMeter: true,
+                                                color: const Color(0x22EF6C32),
+                                                borderColor:
+                                                    report.status == ReportStatus.verified
+                                                    ? const Color(0xFFBD322A)
+                                                    : const Color(0xFFE38A25),
+                                                borderStrokeWidth: 3,
+                                              ),
+                                          ],
+                                        ),
                                       MarkerLayer(markers: markers),
                                     ],
                                   ),
@@ -1812,6 +1844,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onSelectRoute: _fitRoute,
                   onSetStart: (input) => _setTypedRoutePoint(input, origin: true),
                   onSetEnd: (input) => _setTypedRoutePoint(input, origin: false),
+                  nearbyReports: _selectedRouteIssues,
                 ),
                 const SizedBox(height: 18),
                 SectionCard(
