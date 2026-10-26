@@ -1194,10 +1194,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   title: 'Explore local safety infrastructure',
                   description: 'Search for a school, inspect mapped walking and cycling infrastructure, compare routes, or select a point to report a concern.',
                   icon: Icons.travel_explore,
-                  trailing: StatusPill(
-                    label: 'NCES EDGE • OpenStreetMap',
-                    icon: Icons.public,
-                  ),
                 ),
                 const SizedBox(height: 24),
                 SectionCard(
