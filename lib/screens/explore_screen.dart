@@ -1405,6 +1405,52 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           },
                         ),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                        child: SectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Icon(Icons.tune, color: colors.primary),
+                                  Text(
+                                    'Filter map markers',
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  ChoiceChip(
+                                    label: const Text('All issues'),
+                                    selected: _filter == null,
+                                    onSelected: (_) {
+                                      setState(() => _filter = null);
+                                      _scheduleViewport();
+                                    },
+                                  ),
+                                  for (final type in HazardType.values)
+                                    ChoiceChip(
+                                      label: Text(type.label),
+                                      selected: _filter == type,
+                                      onSelected: (_) {
+                                        setState(() => _filter = type);
+                                        _scheduleViewport();
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       if (_mapData != null)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1898,50 +1944,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onSetEnd: (input) => _setTypedRoutePoint(input, origin: false),
                   onUseCurrentLocation: _useCurrentAsRouteOrigin,
                   nearbyReports: _selectedRouteIssues,
-                ),
-                const SizedBox(height: 18),
-                SectionCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Icon(Icons.tune, color: colors.primary),
-                          Text(
-                            'Filter map markers',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ChoiceChip(
-                            label: const Text('All issues'),
-                            selected: _filter == null,
-                            onSelected: (_) {
-                              setState(() => _filter = null);
-                              _scheduleViewport();
-                            },
-                          ),
-                          for (final type in HazardType.values)
-                            ChoiceChip(
-                              label: Text(type.label),
-                              selected: _filter == type,
-                              onSelected: (_) {
-                                setState(() => _filter = type);
-                                _scheduleViewport();
-                              },
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ),
