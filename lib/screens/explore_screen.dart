@@ -459,7 +459,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${school.classification == 'private' ? 'Private' : 'Public'} school • NCES EDGE ${school.sourceYear ?? ''} • ${school.id}',
+                '${school.classification == 'private' ? 'Private' : 'Public'} school • NCES ${school.sourceYear ?? ''} • ${school.id}',
               ),
               const SizedBox(height: 8),
               const Text(
@@ -1876,7 +1876,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                             maxWidth: compactLayout ? 260 : 520,
                                           ),
                                           child: const Text(
-                                            '© OpenStreetMap contributors (ODbL) • NCES EDGE (public domain)',
+                                            '© OpenStreetMap contributors (ODbL) • NCES (public domain)',
                                             textAlign: TextAlign.right,
                                             style: TextStyle(
                                               fontSize: 10,
@@ -2051,7 +2051,7 @@ class _MapTextAlternative extends StatelessWidget {
                 subtitle: Text(
                   school.tags['operator'] ??
                       school.tags['addr:street'] ??
-                      'NCES EDGE school location',
+                      'NCES school location',
                 ),
               ),
             if (schools.length > displayLimit)

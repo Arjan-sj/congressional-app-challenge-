@@ -6,7 +6,7 @@ relationships. The production work performed for this PR was read-only.
 
 ## Official source and identity rules
 
-Use these same-year NCES EDGE/CCD-derived sources:
+Use these same-year NCES/CCD-derived sources:
 
 | Official dataset | Year | Fields and purpose |
 |---|---|---|

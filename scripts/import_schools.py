@@ -1,4 +1,4 @@
-"""NCES EDGE synchronization. Python standard library; credentials stay server-side.
+"""NCES school synchronization. Python standard library; credentials stay server-side.
 
 Defaults were verified against the official service directory on 2026-10-20.
 Public IDs use NCESSCH; private IDs use PPIN (not the same source schema).

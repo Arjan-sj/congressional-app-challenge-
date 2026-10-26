@@ -1,4 +1,4 @@
-"""Official NCES EDGE district facts; standard library and no database writes.
+"""Official NCES district facts; standard library and no database writes.
 
 IDs are taken from explicit source fields. A school's NCESSCH prefix is never
 used to invent or override its current LEAID relationship.
