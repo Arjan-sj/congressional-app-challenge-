@@ -96,7 +96,7 @@ void main() {
         ),
       );
       expectOptionalChips(true);
-      expect(find.textContaining('query completed'), findsOneWidget);
+      expect(find.textContaining('query completed'), findsNothing);
     },
   );
   testWidgets('valid cached data keeps controls during a failed refresh', (
@@ -114,8 +114,9 @@ void main() {
       ),
     );
     expectOptionalChips(true);
-    expect(find.textContaining('refresh failed'), findsOneWidget);
-    expect(find.textContaining('coverage: partial'), findsOneWidget);
+    expect(find.byKey(const ValueKey('retry-infrastructure')), findsOneWidget);
+    expect(find.textContaining('Using valid cached'), findsNothing);
+    expect(find.byKey(const ValueKey('infrastructure-coverage')), findsNothing);
   });
   testWidgets(
     'successful empty and cached empty data keep controls and explain missing mapping',
@@ -141,7 +142,7 @@ void main() {
       );
       expect(
         find.textContaining(
-          'cached response contains no mapped infrastructure',
+          'No mapped infrastructure',
         ),
         findsOneWidget,
       );

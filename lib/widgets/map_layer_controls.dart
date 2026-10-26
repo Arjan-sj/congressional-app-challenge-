@@ -70,10 +70,8 @@ class MapLayerControls extends StatelessWidget {
         'No mapped infrastructure was returned for this area.',
       InfrastructureAvailability.cached =>
         status.isEmpty
-            ? 'The valid cached response contains no mapped infrastructure in this area.'
-            : status.lastAttemptFailed
-            ? 'Using valid cached infrastructure for this area; refresh failed.'
-            : 'Using valid cached infrastructure for this area.',
+            ? 'No mapped infrastructure was returned for this area.'
+            : null,
       InfrastructureAvailability.loading =>
         status.hasValidCache
             ? 'Refreshing infrastructure; showing valid cached data.'
@@ -126,14 +124,14 @@ class MapLayerControls extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   const SizedBox(width: 8),
-                  ConstrainedBox(
+                  if (message != null) ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 220),
                     child: Text(
                       message,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                ] else
+                ] else if (message != null)
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 220),
                     child: Text(
@@ -168,17 +166,6 @@ class MapLayerControls extends StatelessWidget {
                     ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'OSM query coverage: ${status.coverage.name}. Missing OSM data does not prove that sidewalks or paths do not exist.',
-              key: const ValueKey('infrastructure-coverage'),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (status.coverage == InfrastructureCoverage.complete)
-              Text(
-                'The requested query completed; real-world mapping may still be incomplete.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
             if (status.lastAttemptFailed && onRetry != null)
               Align(
                 alignment: Alignment.centerLeft,

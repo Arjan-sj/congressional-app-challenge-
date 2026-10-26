@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:congressional_app/app.dart';
+import 'package:congressional_app/widgets/map_layer_controls.dart';
 
 void main() {
   testWidgets('Explore shows school map and explicit zoom controls', (
@@ -28,6 +29,12 @@ void main() {
     expect(find.byIcon(Icons.remove), findsOneWidget);
     expect(find.byTooltip('Go to my location'), findsOneWidget);
     expect(find.text('Map key'), findsOneWidget);
+    final markerFilter = find.text('Filter map markers');
+    expect(markerFilter, findsOneWidget);
+    expect(tester.getTopLeft(markerFilter).dy,
+        greaterThan(tester.getBottomLeft(find.byType(MapLayerControls)).dy));
+    expect(tester.getBottomLeft(markerFilter).dy,
+        lessThan(tester.getTopLeft(find.byType(FlutterMap)).dy));
     expect(find.textContaining('Schools ('), findsOneWidget);
     expect(find.textContaining('Sidewalks ('), findsOneWidget);
     expect(find.textContaining('Crossings ('), findsOneWidget);
